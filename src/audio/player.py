@@ -4,7 +4,7 @@ import subprocess
 
 
 class AudioPlayerError(Exception):
-    """ Audio Player Exceptions """
+    """ Audio Player Exceptions. """
     pass
 
 
@@ -41,14 +41,14 @@ def play_audio(file_path: str) -> None:
 
 
 def _is_wav(file_path: str) -> bool:
-    """" Check file header for WAV """
+    """" Check file header for WAV. """
     with open(file_path, "rb") as f:
         header = f.read(12)
     return header.startswith(b"RIFF") and header[8:12] == b"WAVE"
 
 
 def _is_mp3(file_path: str) -> bool:
-    """" Check file header for MP3 """
+    """" Check file header for MP3. """
     with open(file_path, "rb") as f:
         header = f.read(3)
     return (
