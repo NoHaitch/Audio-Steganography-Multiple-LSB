@@ -2,15 +2,17 @@ import argparse
 import sys
 from audio import play_audio, load_mp3, calculate_psnr
 from audio import AudioPlayerError, AudioIOError
+from stego import read_secret_file, StegoInputError
 
 
-""" List of Args: 
+""" List of Args:
   -h, --help                    Show this help message and exit
   -play FILE                    Play an MP3 or WAV file using system default player
   -read FILE                    Read an MP3 file and print decoded PCM samples
     --amount N                      Print N samples (default: 20, from the middle)
     --range START END               Print samples from START to END indices
   -compare ORIGINAL MODIFIED    Compare two MP3 files and calculate the PSNR value.
+  -read-secret FILE             Read a secret file and print its metadata and content as bits.
 """
 
 
@@ -37,9 +39,15 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "-read-secret",
+        metavar="FILE",
+        help="Read a secret file and print its metadata and content as bits.",
+    )
+
+    parser.add_argument(
         "--amount",
         type=int,
-        help="Number of samples to print (default: 50, from the middle of the file).",
+        help="Number of samples (for -read) or bits (for -read-secret) to print.",
     )
 
     parser.add_argument(
@@ -47,7 +55,7 @@ def main() -> None:
         nargs=2,
         type=int,
         metavar=("START", "END"),
-        help="Range of sample indices to print (overrides --amount).",
+        help="Range of sample/bit indices to print (overrides --amount).",
     )
 
     args = parser.parse_args()
@@ -119,6 +127,39 @@ def main() -> None:
             print(f"[FATAL] Unexpected error: {e}", file=sys.stderr)
             sys.exit(2)
 
+    if args.read_secret:
+        try:
+            secret_data = read_secret_file(args.read_secret)
+            
+            print(f"File Path: {args.read_secret}")
+            print(f"File Size: {secret_data.size_in_bytes} bytes")
+            print(f"File Extension: '{secret_data.extension}'")
+
+            bit_string = "".join(format(byte, '08b') for byte in secret_data.content)
+            total_bits = len(bit_string)
+            print(f"Total Bits: {total_bits}")
+            
+            if args.range:
+                start, end = args.range
+                if start < 0 or end > total_bits or start >= end:
+                    print(f"[ERROR] Invalid bit range: {start}–{end}", file=sys.stderr)
+                    sys.exit(1)
+                print(f"\nShowing bits from index {start} to {end}:")
+                print(bit_string[start:end])
+            else:
+                amount = args.amount if args.amount else 80
+                end = min(amount, total_bits)
+                print(f"\nShowing first {end} bits:")
+                print(bit_string[:end])
+
+        except StegoInputError as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"[FATAL] Unexpected error: {e}", file=sys.stderr)
+            sys.exit(2)
+
 
 if __name__ == "__main__":
     main()
+
