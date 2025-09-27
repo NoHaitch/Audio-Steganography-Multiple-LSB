@@ -1,16 +1,16 @@
 import argparse
 import sys
-from audio import play_audio, load_mp3
+from audio import play_audio, load_mp3, calculate_psnr
 from audio import AudioPlayerError, AudioIOError
 
 
-"""
-List of Args
-  -h, --help          Show this help message and exit
-  -play FILE          Play an MP3 or WAV file using system default player
-  -read FILE          Read an MP3 file and print decoded PCM samples
-    --amount N          Print N samples (default: 20, from the middle)
-    --range START END   Print samples from START to END indices
+""" List of Args: 
+  -h, --help                    Show this help message and exit
+  -play FILE                    Play an MP3 or WAV file using system default player
+  -read FILE                    Read an MP3 file and print decoded PCM samples
+    --amount N                      Print N samples (default: 20, from the middle)
+    --range START END               Print samples from START to END indices
+  -compare ORIGINAL MODIFIED    Compare two MP3 files and calculate the PSNR value.
 """
 
 
@@ -27,6 +27,13 @@ def main() -> None:
         "-read",
         metavar="FILE",
         help="Read an MP3 file and print decoded PCM samples.",
+    )
+
+    parser.add_argument(
+        "-compare",
+        nargs=2,
+        metavar=("ORIGINAL", "MODIFIED"),
+        help="Compare two audio files and calculate the PSNR value.",
     )
 
     parser.add_argument(
@@ -82,6 +89,35 @@ def main() -> None:
         except AudioIOError as e:
             print(f"[ERROR] {e}", file=sys.stderr)
             sys.exit(1)
+
+    if args.compare:
+        try:
+            original_path, modified_path = args.compare
+
+            print(f"[*] Loading original file: '{original_path}'")
+            original_audio = load_mp3(original_path)
+
+            print(f"[*] Loading modified file: '{modified_path}'")
+            modified_audio = load_mp3(modified_path)
+
+            min_len = min(len(original_audio.samples), len(modified_audio.samples))
+            original_samples = original_audio.samples[:min_len]
+            modified_samples = modified_audio.samples[:min_len]
+
+            print("[*] Calculating PSNR...")
+            psnr = calculate_psnr(original_samples, modified_samples)
+
+            print("\n" + "---" * 10)
+            print("   Comparison Complete")
+            print(f"   PSNR Value: {psnr:.2f} dB")
+            print("---" * 10)
+
+        except AudioIOError as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"[FATAL] Unexpected error: {e}", file=sys.stderr)
+            sys.exit(2)
 
 
 if __name__ == "__main__":
