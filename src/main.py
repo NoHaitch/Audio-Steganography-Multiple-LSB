@@ -1,33 +1,50 @@
 import argparse
 import sys
-from audio import play_audio, load_mp3, calculate_psnr
+import os
+
+from audio import play_audio, load_mp3, save_mp3, calculate_psnr
 from audio import AudioPlayerError, AudioIOError
-from stego import read_secret_file, StegoInputError
+
+from stego import read_secret_file, embed
+from stego import StegoInputError, StegoEmbbedError
 
 
 """ List of Args:
   -h, --help                    Show this help message and exit
-  -play FILE                    Play an MP3 or WAV file using system default player
-  -read FILE                    Read an MP3 file and print decoded PCM samples
-    --amount N                      Print N samples (default: 20, from the middle)
-    --range START END               Print samples from START to END indices
-  -compare ORIGINAL MODIFIED    Compare two MP3 files and calculate the PSNR value.
-  -read-secret FILE             Read a secret file and print its metadata and content as bits.
+  -play FILE                    Play an MP3 or WAV file.
+  -read FILE                    Read an MP3 and print PCM samples.
+    --amount N                  Print N samples/bits.
+    --range START END           Print samples/bits in a range.
+  -compare ORIGINAL MODIFIED    Compare two MP3 files using PSNR.
+  -read-secret FILE             Read a secret file and print its content as bits.
+  -test-recompression FILE      Load, save, and compare an MP3 to test quality loss.
+  -embedd COVER SECRET LSB      Embedd a secret file into a cover MP3.
+    --output FILE               Specify the output path for the stego audio.
 """
 
 
+def _bytes_to_bit_string(data: bytes) -> str:
+    """ Convert bytes to a string of '0's and '1's. """
+    return "".join(format(byte, "08b") for byte in data)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="MP3 Steganography using Multiple LSB")
+    parser = argparse.ArgumentParser(
+        description="MP3 Steganography using Multiple LSB",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
 
     parser.add_argument(
         "-play",
         metavar="FILE",
-        help="Play an MP3 or WAV file using system default player.",
+        type=os.path.abspath,
+        help="Play an MP3 or WAV file.",
     )
 
     parser.add_argument(
         "-read",
         metavar="FILE",
+        type=os.path.abspath,
         help="Read an MP3 file and print decoded PCM samples.",
     )
 
@@ -35,13 +52,36 @@ def main() -> None:
         "-compare",
         nargs=2,
         metavar=("ORIGINAL", "MODIFIED"),
+        type=os.path.abspath,
         help="Compare two audio files and calculate the PSNR value.",
     )
 
     parser.add_argument(
         "-read-secret",
         metavar="FILE",
+        type=os.path.abspath,
         help="Read a secret file and print its metadata and content as bits.",
+    )
+
+    parser.add_argument(
+        "-test-recompression",
+        metavar="FILE",
+        type=os.path.abspath,
+        help="Load, save, and then compare an MP3 to test recompression quality loss.",
+    )
+
+    parser.add_argument(
+        "-embedd",
+        nargs=3,
+        metavar=("COVER_MP3", "SECRET_FILE", "LSB_COUNT"),
+        help="Embedd a secret file into a cover MP3 using n LSBs.",
+    )
+
+    parser.add_argument(
+        "--output",
+        metavar="FILE",
+        type=os.path.abspath,
+        help="Specify the output path for the generated stego audio file.",
     )
 
     parser.add_argument(
@@ -73,27 +113,29 @@ def main() -> None:
     if args.read:
         try:
             audio = load_mp3(args.read)
+            print(f"File: {args.read}")
             print(f"Sample rate: {audio.sample_rate} Hz")
             print(f"Samples shape: {audio.samples.shape}")
 
             total_samples = audio.samples.shape[0]
-
             if args.range:
                 start, end = args.range
-                if start < 0 or end > total_samples or start >= end:
-                    print(f"[ERROR] Invalid range: {start}–{end}", file=sys.stderr)
+                if not (0 <= start < end <= total_samples):
+                    print(
+                        f"[ERROR] Invalid sample range: {start}-{end}", file=sys.stderr
+                    )
                     sys.exit(1)
-                print(f"Showing PCM Samples at index {start}:{end}")
+                print(f"\nShowing PCM Samples from index {start} to {end}:")
                 print(audio.samples[start:end])
-
             else:
                 amount = args.amount if args.amount else 20
                 mid = total_samples // 2
                 start = max(mid - amount // 2, 0)
                 end = min(start + amount, total_samples)
-                print(f"Showing PCM Samples at index {start}:{end}")
+                print(
+                    f"\nShowing {end-start} PCM Samples from the middle (index {start}-{end}):"
+                )
                 print(audio.samples[start:end])
-
         except AudioIOError as e:
             print(f"[ERROR] {e}", file=sys.stderr)
             sys.exit(1)
@@ -101,48 +143,41 @@ def main() -> None:
     if args.compare:
         try:
             original_path, modified_path = args.compare
+            print(
+                f"[*] Comparing:\n  - Original: {original_path}\n  - Modified: {modified_path}"
+            )
 
-            print(f"[*] Loading original file: '{original_path}'")
             original_audio = load_mp3(original_path)
-
-            print(f"[*] Loading modified file: '{modified_path}'")
             modified_audio = load_mp3(modified_path)
 
             min_len = min(len(original_audio.samples), len(modified_audio.samples))
-            original_samples = original_audio.samples[:min_len]
-            modified_samples = modified_audio.samples[:min_len]
-
-            print("[*] Calculating PSNR...")
-            psnr = calculate_psnr(original_samples, modified_samples)
+            psnr = calculate_psnr(
+                original_audio.samples[:min_len], modified_audio.samples[:min_len]
+            )
 
             print("\n" + "---" * 10)
-            print("   Comparison Complete")
-            print(f"   PSNR Value: {psnr:.2f} dB")
+            print("    Comparison Complete")
+            print(f"     PSNR Value (File-to-File): {psnr:.2f} dB")
             print("---" * 10)
-
         except AudioIOError as e:
             print(f"[ERROR] {e}", file=sys.stderr)
             sys.exit(1)
-        except Exception as e:
-            print(f"[FATAL] Unexpected error: {e}", file=sys.stderr)
-            sys.exit(2)
 
     if args.read_secret:
         try:
             secret_data = read_secret_file(args.read_secret)
-            
             print(f"File Path: {args.read_secret}")
             print(f"File Size: {secret_data.size_in_bytes} bytes")
             print(f"File Extension: '{secret_data.extension}'")
 
-            bit_string = "".join(format(byte, '08b') for byte in secret_data.content)
+            bit_string = _bytes_to_bit_string(secret_data.content)
             total_bits = len(bit_string)
             print(f"Total Bits: {total_bits}")
-            
+
             if args.range:
                 start, end = args.range
-                if start < 0 or end > total_bits or start >= end:
-                    print(f"[ERROR] Invalid bit range: {start}–{end}", file=sys.stderr)
+                if not (0 <= start < end <= total_bits):
+                    print(f"[ERROR] Invalid bit range: {start}-{end}", file=sys.stderr)
                     sys.exit(1)
                 print(f"\nShowing bits from index {start} to {end}:")
                 print(bit_string[start:end])
@@ -151,15 +186,81 @@ def main() -> None:
                 end = min(amount, total_bits)
                 print(f"\nShowing first {end} bits:")
                 print(bit_string[:end])
-
         except StegoInputError as e:
             print(f"[ERROR] {e}", file=sys.stderr)
             sys.exit(1)
+
+    if args.test_recompression:
+        try:
+            original_path = args.test_recompression
+            print(f"[*] Testing recompression for: '{original_path}'")
+
+            print("    -> Loading original file...")
+            original_audio = load_mp3(original_path)
+
+            recompressed_path = os.path.join(
+                os.path.dirname(original_path), "recompressed_test.mp3"
+            )
+            print(f"    -> Saving to '{recompressed_path}'...")
+            save_mp3(recompressed_path, original_audio)
+
+            print("    -> Loading recompressed file for comparison...")
+            recompressed_audio = load_mp3(recompressed_path)
+
+            print("    -> Calculating PSNR...")
+            min_len = min(len(original_audio.samples), len(recompressed_audio.samples))
+            psnr = calculate_psnr(
+                original_audio.samples[:min_len], recompressed_audio.samples[:min_len]
+            )
+
+            print("\n" + "---" * 10)
+            print("    Recompression Test Complete")
+            print(f"     PSNR between original and recompressed file: {psnr:.2f} dB")
+            print("---" * 10)
+        except (AudioIOError, StegoEmbbedError) as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if args.embedd:
+        try:
+            cover_path_rel, secret_path_rel, n_lsb_str = args.embedd
+            cover_path = os.path.abspath(cover_path_rel)
+            secret_path = os.path.abspath(secret_path_rel)
+            n_lsb = int(n_lsb_str)
+
+            print(f"[*] Loading cover audio: '{cover_path}'")
+            cover_audio = load_mp3(cover_path)
+
+            print(f"[*] Loading secret file: '{secret_path}'")
+            secret_data_obj = read_secret_file(secret_path)
+
+            print(f"[*] Encoding payload using {n_lsb}-LSB method...")
+            stego_audio_data = embed(cover_audio, secret_data_obj.content, n_lsb)
+
+            print("[*] Calculating in-memory PSNR (Original PCM vs. Stego PCM)...")
+            psnr_in_memory = calculate_psnr(
+                cover_audio.samples, stego_audio_data.samples
+            )
+
+            output_path = args.output if args.output else "stego_output.mp3"
+            print(f"[*] Saving stego audio to '{output_path}'...")
+            save_mp3(output_path, stego_audio_data)
+
+            print("\n" + "---" * 10)
+            print("    Encoding successful!")
+            print(f"     Stego file saved to: {output_path}")
+            print(f"     PSNR (In-Memory LSB change): {psnr_in_memory:.2f} dB")
+            print("---" * 10)
+            print("\n[INFO] To check the final quality loss from re-encoding,")
+            print(f'       run: python main.py -compare "{cover_path}" "{output_path}"')
+
+        except (AudioIOError, StegoInputError, StegoEmbbedError, ValueError) as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(1)
         except Exception as e:
-            print(f"[FATAL] Unexpected error: {e}", file=sys.stderr)
+            print(f"[FATAL] An unexpected error occurred: {e}", file=sys.stderr)
             sys.exit(2)
 
 
 if __name__ == "__main__":
     main()
-
