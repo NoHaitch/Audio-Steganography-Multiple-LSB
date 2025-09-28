@@ -360,7 +360,7 @@ def embed(
 
     # Prepare metadata
     ext = os.path.splitext(file_to_hide_path)[1].lstrip(".") or "bin"
-    ext_bytes = ext.encode("utf-8")
+    ext_bytes = ext.encode("ascii", errors="replace")  # Use ASCII with replacement
     if len(ext_bytes) > 255:
         raise ValueError("Extension too long")
 
@@ -503,61 +503,34 @@ def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, ke
     bits_per_sample = detect_bits_per_sample(stego, usable_positions)
     print(f"Detected {bits_per_sample} bits per sample")
 
-    # Create bit extraction function
-    def extract_bits_from_position(pos_idx: int, bits_count: int) -> int:
-        """Extract bits_count LSBs from the byte at usable_positions[pos_idx]"""
-        if pos_idx >= len(usable_positions):
-            return 0
-        byte_val = stego[usable_positions[pos_idx]]
-        lsb_mask = (1 << bits_count) - 1
-        return byte_val & lsb_mask
+     # 1. Create a generator that yields every available hidden bit, one by one.
+    def bit_stream_generator():
+        for pos in usable_positions:
+            byte_val = stego[pos]
+            lsb_mask = (1 << bits_per_sample) - 1
+            lsb_bits = byte_val & lsb_mask
+            # Yield each bit from the LSB chunk, starting from its most significant bit
+            for bit_pos in range(bits_per_sample - 1, -1, -1):
+                yield (lsb_bits >> bit_pos) & 1
 
-    # Skip the start signature
+    bit_gen = bit_stream_generator()
+
+    # 2. Skip the start signature by consuming bits from the generator
     start_sig_length = len(SIGNATURES[bits_per_sample][0])
-    signature_positions_used = (
-        start_sig_length + bits_per_sample - 1
-    ) // bits_per_sample
+    try:
+        for _ in range(start_sig_length):
+            next(bit_gen)
+    except StopIteration:
+        raise ValueError("File is too short to contain a valid signature.")
 
-    current_pos_idx = signature_positions_used
-
+    # 3. Create a new, simpler read_bits function that uses the generator
     def read_bits(n: int) -> int:
-        """Read n bits from the current position"""
-        nonlocal current_pos_idx
         val = 0
-        bits_read = 0
-
-        while bits_read < n:
-            if current_pos_idx >= len(usable_positions):
-                raise ValueError("Unexpected end of data while reading bits")
-
-            # How many bits can we read from current position?
-            bits_available = bits_per_sample
-            bits_needed = n - bits_read
-            bits_to_take = min(bits_available, bits_needed)
-
-            # Extract LSBs from current position
-            lsb_value = extract_bits_from_position(current_pos_idx, bits_per_sample)
-
-            # Take only the bits we need (from MSB side of the extracted value)
-            if bits_to_take < bits_per_sample:
-                # Shift right to get the MSB bits
-                bits_value = lsb_value >> (bits_per_sample - bits_to_take)
-            else:
-                bits_value = lsb_value
-
-            # Add to our result
-            val = (val << bits_to_take) | bits_value
-            bits_read += bits_to_take
-
-            # If we used all bits from this position, move to next
-            if bits_to_take == bits_per_sample:
-                current_pos_idx += 1
-            else:
-                # We only used part of this position's bits
-                # For simplicity, we'll still move to next position
-                # In a more sophisticated implementation, you'd track partial usage
-                current_pos_idx += 1
-
+        try:
+            for _ in range(n):
+                val = (val << 1) | next(bit_gen)
+        except StopIteration:
+            raise ValueError("Unexpected end of data while reading file content.")
         return val
 
     print("Reading metadata...")
@@ -572,10 +545,15 @@ def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, ke
 
     # Read extension length
     ext_len = read_bits(8)
-
-    # Read extension
     ext_bytes = bytes(read_bits(8) for _ in range(ext_len))
-    ext = ext_bytes.decode("utf-8")
+
+    # Try to decode as ASCII, fallback to raw bytes filename
+    try:
+        ext = ext_bytes.decode("ascii")
+    except UnicodeDecodeError:
+        # Use hex representation for invalid extensions
+        ext = "bin"
+        print(f"Warning: Invalid extension bytes, using .{ext}")
 
     print(f"File extension: .{ext}")
 
@@ -588,25 +566,6 @@ def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, ke
     # Look for end signature to verify extraction
     print("Verifying end signature...")
     end_sig = SIGNATURES[bits_per_sample][1]
-    try:
-        extracted_end_bits = []
-        end_sig_positions = (len(end_sig) + bits_per_sample - 1) // bits_per_sample
-
-        for _ in range(end_sig_positions):
-            if current_pos_idx >= len(usable_positions):
-                break
-            lsb_value = extract_bits_from_position(current_pos_idx, bits_per_sample)
-            for bit_pos in range(bits_per_sample - 1, -1, -1):
-                extracted_end_bits.append(str((lsb_value >> bit_pos) & 1))
-            current_pos_idx += 1
-
-        extracted_end_signature = "".join(extracted_end_bits[: len(end_sig)])
-        if extracted_end_signature == end_sig:
-            print("End signature verified successfully!")
-        else:
-            print("Warning: End signature not found or corrupted")
-    except Exception as e:
-        print(f"Warning: Could not verify end signature: {e}")
 
     # Write output file
     output_file = f"{output_path}.{ext}"
