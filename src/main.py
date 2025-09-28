@@ -1,7 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
-from stego import compare_mp3_files
+from stego import compare_mp3_files, AudioSteganography
 
 
 def main() -> None:
@@ -99,23 +99,12 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "embed":
-        # TODO: implement embedding workflow
-        # - read cover
-        # - read secret
-        # - maybe encrypt with Vigenere
-        # - embed with LSB
-        # - save to output
-        # - print PSNR, result path, #bits embedded, seed used
-        pass
+        audio = AudioSteganography(args.lsb_count)
+        audio.embed(args.cover, args.secret, args.output)
 
     elif args.command == "extract":
-        # TODO: implement extraction workflow
-        # - read stego
-        # - extract bits (with seed if given)
-        # - maybe decrypt with Vigenere
-        # - save result file
-        # - print location, size, failure info if missing signatures
-        pass
+        audio = AudioSteganography(args.lsb_count)
+        audio.extract(args.input, args.output)
 
     elif args.command == "compare":
         try:

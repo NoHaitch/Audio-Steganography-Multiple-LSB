@@ -50,7 +50,7 @@ class AudioSteganography:
         Returns:
             bytearray: bytestream repr of file
         """
-        with open(path, "rb") as f:
+        with open((path), "rb") as f:
             return bytearray(f.read())
 
 
@@ -62,7 +62,7 @@ class AudioSteganography:
             path (str): path to the output file
             data (bytearray): data to be written
         """
-        with open(path, "wb") as f:
+        with open((path), "wb") as f:
             f.write(data)
 
 
@@ -236,10 +236,10 @@ if __name__ == "__main__":
     audio = AudioSteganography(2)
     if opt == 1:
         # --- Embed step ---
-        audio.embed(os.path.abspath("original.mp3"), os.path.abspath("foto1.jpg"), os.path.abspath("out2.mp3"))
+        audio.embed(("original.mp3"), ("foto1.jpg"), ("out2.mp3"))
 
-        original_pcm, sr = librosa.load(os.path.abspath("original.mp3"), sr=None)
-        modified_pcm, _ = librosa.load(os.path.abspath("out2.mp3"), sr=sr)
+        original_pcm, sr = librosa.load(("original.mp3"), sr=None)
+        modified_pcm, _ = librosa.load(("out2.mp3"), sr=sr)
 
         # Match lengths (decoders sometimes return tiny differences)
         min_len = min(len(original_pcm), len(modified_pcm))
@@ -249,4 +249,4 @@ if __name__ == "__main__":
         psnr_value = audio.calculate_psnr(original_pcm, modified_pcm)
         print(f"PSNR between original and stego: {psnr_value:.4f} dB")
     else:
-        audio.extract(os.path.abspath("out2.mp3"), "")
+        audio.extract(("out2.mp3"), "")
