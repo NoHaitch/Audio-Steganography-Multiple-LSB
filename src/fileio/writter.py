@@ -1,5 +1,5 @@
 from pathlib import Path
-from types.exceptions import IOWriterError
+from utils.exceptions import IOWriterError
 
 
 def write_mp3_bytes(path: str | Path, data: bytearray) -> None:
