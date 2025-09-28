@@ -5,26 +5,29 @@ import os
 from audio import play_audio, load_mp3, save_mp3, calculate_psnr
 from audio import AudioPlayerError, AudioIOError
 
-from stego import read_secret_file, embed
+from stego import read_secret_file, embed, AudioSteganography
 from stego import StegoInputError, StegoEmbbedError
 
 
-""" List of Args:
-  -h, --help                    Show this help message and exit
-  -play FILE                    Play an MP3 or WAV file.
-  -read FILE                    Read an MP3 and print PCM samples.
-    --amount N                  Print N samples/bits.
-    --range START END           Print samples/bits in a range.
-  -compare ORIGINAL MODIFIED    Compare two MP3 files using PSNR.
-  -read-secret FILE             Read a secret file and print its content as bits.
-  -test-recompression FILE      Load, save, and compare an MP3 to test quality loss.
-  -embedd COVER SECRET LSB      Embedd a secret file into a cover MP3.
-    --output FILE               Specify the output path for the stego audio.
-"""
+# List of Args:
+#   -h, --help                    Show this help message and exit
+#   -play FILE                    Play an MP3 or WAV file.
+#   -read FILE                    Read an MP3 and print PCM samples.
+#     --amount N                  Print N samples/bits.
+#     --range START END           Print samples/bits in a range.
+#   -compare ORIGINAL MODIFIED    Compare two MP3 files using PSNR.
+#   -read-secret FILE             Read a secret file and print its content as bits.
+#   -test-recompression FILE      Load, save, and compare an MP3 to test quality loss.
+#   -embedd COVER SECRET LSB      Embedd a secret file into a cover MP3.
+#     --output FILE               Specify the output path for the stego audio.
+#   -hide COVER SECRET OUTPUT     Hide a file in audio using AudioSteganography class.
+#     --bits-per-sample N         Number of LSB bits to use (1-4, default: 2).
+#   -extract STEGO_AUDIO          Extract hidden file from steganographic audio.
+#     --extract-output DIR        Directory to save the extracted file.
 
 
 def _bytes_to_bit_string(data: bytes) -> str:
-    """ Convert bytes to a string of '0's and '1's. """
+    """Convert bytes to a string of '0's and '1's."""
     return "".join(format(byte, "08b") for byte in data)
 
 
@@ -71,10 +74,24 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "-embedd",
+        "-embed",
         nargs=3,
         metavar=("COVER_MP3", "SECRET_FILE", "LSB_COUNT"),
         help="Embedd a secret file into a cover MP3 using n LSBs.",
+    )
+
+    parser.add_argument(
+        "-hide",
+        nargs=3,
+        metavar=("COVER_AUDIO", "SECRET_FILE", "OUTPUT_AUDIO"),
+        help="Hide a file in audio using AudioSteganography class.",
+    )
+
+    parser.add_argument(
+        "-extract",
+        metavar="STEGO_AUDIO",
+        type=os.path.abspath,
+        help="Extract hidden file from steganographic audio.",
     )
 
     parser.add_argument(
@@ -82,6 +99,22 @@ def main() -> None:
         metavar="FILE",
         type=os.path.abspath,
         help="Specify the output path for the generated stego audio file.",
+    )
+
+    parser.add_argument(
+        "--bits-per-sample",
+        type=int,
+        default=2,
+        choices=[1, 2, 3, 4],
+        help="Number of LSB bits to use for hiding data (1-4, default: 2).",
+    )
+
+    parser.add_argument(
+        "--extract-output",
+        metavar="DIR",
+        type=os.path.abspath,
+        default=".",
+        help="Directory to save the extracted file (default: current directory).",
     )
 
     parser.add_argument(
@@ -260,6 +293,95 @@ def main() -> None:
         except Exception as e:
             print(f"[FATAL] An unexpected error occurred: {e}", file=sys.stderr)
             sys.exit(2)
+
+    if args.hide:
+        try:
+            cover_path_rel, secret_path_rel, output_path_rel = args.hide
+            cover_path = os.path.abspath(cover_path_rel)
+            secret_path = os.path.abspath(secret_path_rel)
+            output_path = os.path.abspath(output_path_rel)
+
+            # Validate input files
+            if not os.path.exists(cover_path):
+                print(
+                    f"[ERROR] Cover audio file not found: {cover_path}", file=sys.stderr
+                )
+                sys.exit(1)
+
+            if not os.path.exists(secret_path):
+                print(f"[ERROR] Secret file not found: {secret_path}", file=sys.stderr)
+                sys.exit(1)
+
+            bits_per_sample = args.bits_per_sample
+            print(
+                f"[*] Using AudioSteganography with {bits_per_sample}-bit LSB embedding"
+            )
+
+            steganography = AudioSteganography(bits_per_sample=bits_per_sample)
+            steganography.hide_file(cover_path, secret_path, output_path)
+
+        except Exception as e:
+            print(f"[ERROR] Failed to hide file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if args.extract:
+        try:
+            stego_audio_path = args.extract
+            output_dir = args.extract_output
+
+            if not os.path.exists(stego_audio_path):
+                print(
+                    f"[ERROR] Steganographic audio file not found: {stego_audio_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+                print(f"[*] Created output directory: {output_dir}")
+
+            # Try different bit configurations if extraction fails
+            bits_per_sample = (
+                args.bits_per_sample if hasattr(args, "bits_per_sample") else None
+            )
+
+            if bits_per_sample:
+                # Use specified bits per sample
+                print(f"[*] Attempting extraction with {bits_per_sample}-bit LSB...")
+                steganography = AudioSteganography(bits_per_sample=bits_per_sample)
+                extracted_file = steganography.extract_file(
+                    stego_audio_path, output_dir
+                )
+                print(f"[*] Extraction successful! File saved to: {extracted_file}")
+            else:
+                # Try different configurations
+                success = False
+                for bits in [2, 1, 3, 4]:  # Try most common first
+                    try:
+                        print(f"[*] Attempting extraction with {bits}-bit LSB...")
+                        steganography = AudioSteganography(bits_per_sample=bits)
+                        extracted_file = steganography.extract_file(
+                            stego_audio_path, output_dir
+                        )
+                        print(
+                            f"[*] Extraction successful with {bits}-bit LSB! File saved to: {extracted_file}"
+                        )
+                        success = True
+                        break
+                    except Exception as e:
+                        if bits == 4:  # Last attempt
+                            print(
+                                f"[ERROR] All extraction attempts failed. Last error: {e}",
+                                file=sys.stderr,
+                            )
+                        continue
+
+                if not success:
+                    sys.exit(1)
+
+        except Exception as e:
+            print(f"[ERROR] Failed to extract file: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
