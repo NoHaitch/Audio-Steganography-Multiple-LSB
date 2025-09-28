@@ -330,7 +330,9 @@ def embed(
     # Read files
     carrier = reader.read_mp3_bytes(audio_path)
 
-    payload = reader.read_mp3_bytes(file_to_hide_path)
+    message_file = reader.read_secret_file(file_to_hide_path)
+
+    payload = message_file.content
 
     # Prepare metadata
     ext = os.path.splitext(file_to_hide_path)[1].lstrip(".") or "bin"
