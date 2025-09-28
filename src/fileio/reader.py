@@ -1,14 +1,14 @@
 from pathlib import Path
 from typing import Tuple
-from utils import IOReaderError
 import librosa
 import numpy as np
+from utils.exceptions import IOReaderError
+from utils.types import SecretFile
 
 
 def read_mp3_bytes(path: str | Path) -> bytearray:
     """
     Read an MP3 file into a bytearray.
-    Raises IOReaderError if file is not found or not valid.
     """
     file_path = Path(path)
     if not file_path.exists():
@@ -27,7 +27,7 @@ def read_mp3_bytes(path: str | Path) -> bytearray:
 
 def skip_id3_tag(mp3_bytes: bytearray) -> Tuple[int, bytearray]:
     """
-    Skip the ID3v2 tag if present.
+    Skip the ID3v2 tag if present.  
     Returns a tuple: (offset, audio_data)
     - offset: number of bytes skipped
     - audio_data: main MP3 audio data
@@ -46,7 +46,7 @@ def skip_id3_tag(mp3_bytes: bytearray) -> Tuple[int, bytearray]:
 
 def load_mp3_as_pcm(path: str | Path) -> Tuple[np.ndarray, int]:
     """
-    Load an MP3 file as PCM samples using librosa.
+    Load an MP3 file as PCM samples.
     Returns (samples, sample_rate).
     """
     file_path = Path(path)
@@ -58,3 +58,24 @@ def load_mp3_as_pcm(path: str | Path) -> Tuple[np.ndarray, int]:
         return samples, sr
     except Exception as e:
         raise IOReaderError(f"Failed to decode MP3 file {path}") from e
+
+
+def read_secret_file(path: str | Path) -> SecretFile:
+    """
+    Read any file as binary and extract metadata(filename, extension, and size).
+    """
+    file_path = Path(path)
+    if not file_path.exists():
+        raise IOReaderError(f"Secret file not found: {path}")
+
+    try:
+        content = file_path.read_bytes()
+    except Exception as e:
+        raise IOReaderError(f"Failed to read secret file {path}") from e
+
+    return SecretFile(
+        name=file_path.stem,
+        extension=file_path.suffix.lstrip("."),
+        size=len(content),
+        content=content,
+    )
