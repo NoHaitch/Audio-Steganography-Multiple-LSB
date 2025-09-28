@@ -1,5 +1,6 @@
 import random
 import os
+import math
 import hashlib
 import struct
 from typing import Tuple, List, Dict, Union
@@ -264,6 +265,7 @@ class AudioSteganography:
 
         return stego_samples
 
+
     def _extract_bits_from_samples(
         self, audio_samples: np.ndarray, start_position: int, num_bits: int
     ) -> List[int]:
@@ -460,9 +462,26 @@ class AudioSteganography:
         Returns:
             PSNR value in decibels (dB)
         """
-        mse = np.mean((original.astype(np.float64) - modified.astype(np.float64)) ** 2)
-        if mse == 0:
+        original = original.astype(np.float64)
+        modified = modified.astype(np.float64)
+
+        # p0 = signal power of original audio
+        # p1 = signal power of modified audio
+        p0 = np.mean(np.square(original))
+        p1 = np.mean(np.square(modified))
+        power_difference = p1 - p0
+
+        if power_difference == 0:
             return float("inf")
-        max_pixel = 32767.0  # For 16-bit audio
-        psnr = 20 * np.log10(max_pixel / np.sqrt(mse))
+
+        numerator = p1**2
+        denominator = power_difference**2
+
+        ratio = numerator / denominator
+
+        if ratio <= 0:
+            return 0.0
+
+        psnr = 10 * math.log10(ratio)
+
         return psnr

@@ -18,7 +18,7 @@ from stego import StegoInputError, StegoEmbbedError
 #   -compare ORIGINAL MODIFIED    Compare two MP3 files using PSNR.
 #   -read-secret FILE             Read a secret file and print its content as bits.
 #   -test-recompression FILE      Load, save, and compare an MP3 to test quality loss.
-#   -embedd COVER SECRET LSB      Embedd a secret file into a cover MP3.
+#   -embed COVER SECRET LSB       Embed a secret file into a cover MP3.
 #     --output FILE               Specify the output path for the stego audio.
 #   -hide COVER SECRET OUTPUT     Hide a file in audio using AudioSteganography class.
 #     --bits-per-sample N         Number of LSB bits to use (1-4, default: 2).
@@ -77,7 +77,7 @@ def main() -> None:
         "-embed",
         nargs=3,
         metavar=("COVER_MP3", "SECRET_FILE", "LSB_COUNT"),
-        help="Embedd a secret file into a cover MP3 using n LSBs.",
+        help="Embed a secret file into a cover MP3 using n LSBs.",
     )
 
     parser.add_argument(
@@ -254,9 +254,9 @@ def main() -> None:
             print(f"[ERROR] {e}", file=sys.stderr)
             sys.exit(1)
 
-    if args.embedd:
+    if args.embed:
         try:
-            cover_path_rel, secret_path_rel, n_lsb_str = args.embedd
+            cover_path_rel, secret_path_rel, n_lsb_str = args.embed
             cover_path = os.path.abspath(cover_path_rel)
             secret_path = os.path.abspath(secret_path_rel)
             n_lsb = int(n_lsb_str)
