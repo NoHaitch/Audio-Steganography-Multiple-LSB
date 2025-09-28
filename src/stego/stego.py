@@ -1,6 +1,7 @@
 import os
 from typing import Tuple, Dict
 from fileio import reader, writter
+from cipher import vigenere_decrypt, vigenere_encrypt
 
 
 SIGNATURES: Dict[int, Tuple[str, str]] = {
@@ -240,15 +241,35 @@ def build_protected_indices(data: bytes) -> set[int]:
       - The 4-byte header for each MP3 frame found
     """
     protected = set()
+    
+    # Protect ID3v2 tag if present
     id3_end = find_id3v2_end(data)
     if id3_end > 0:
         protected.update(range(0, id3_end))
 
+    # Find all MP3 frames
     frames = find_mp3_frames(data, start_offset=id3_end, min_consec=3, max_scan=2000000)
-    # Add 4 header bytes for each frame
+    
     for fstart, flen in frames:
+        # Protect the entire frame header (4 bytes)
         for i in range(fstart, min(fstart + 4, len(data))):
             protected.add(i)
+            
+        # For Layer III frames, protect the side information too
+        # This is typically 17 bytes for mono, 32 bytes for stereo
+        # after the 4-byte header
+        if flen > 4:
+            # Conservative approach: protect first 36 bytes of each frame
+            # This covers header + side info + some scale factors
+            protected_end = min(fstart + 36, fstart + flen, len(data))
+            for i in range(fstart + 4, protected_end):
+                protected.add(i)
+                
+            # Also protect the last few bytes which might contain ancillary data
+            last_protected_start = max(fstart + 4, fstart + flen - 10)
+            for i in range(last_protected_start, fstart + flen):
+                if i < len(data):
+                    protected.add(i)
 
     return protected
 
@@ -307,7 +328,7 @@ def string_to_bit_stream(binary_string: str):
 
 
 def embed(
-    audio_path: str, file_to_hide_path: str, output_path: str, bits_per_sample: int = 2
+    audio_path: str, file_to_hide_path: str, output_path: str, bits_per_sample: int = 2, encrypt: bool = False, key: str | None = None
 ) -> None:
     """
     Hide a file inside an audio file
@@ -326,6 +347,9 @@ def embed(
 
     if bits_per_sample not in SIGNATURES:
         raise ValueError(f"No signature defined for {bits_per_sample} bits per sample")
+
+    if encrypt and key is None:
+        raise ValueError("If using encryption, provide the key!")
 
     # Read files
     carrier = reader.read_mp3_bytes(audio_path)
@@ -354,6 +378,9 @@ def embed(
     data_bits = (len(header) + len(payload)) * 8
     total_bits = signature_bits + data_bits
     capacity_bits = len(usable_positions) * bits_per_sample
+
+    if encrypt and key is not None:
+        payload = vigenere_encrypt(data=payload, key=key)
 
     print(f"Bits needed: {total_bits}, Capacity: {capacity_bits}")
 
@@ -456,7 +483,7 @@ def detect_bits_per_sample(stego: bytes, usable_positions: list) -> int:
     )
 
 
-def extract(stego_audio_path: str, output_path: str):
+def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, key: str | None = None):
     """
     Extract hidden file from a stego MP3 using signature detection to determine bits_per_sample.
 
