@@ -1,5 +1,6 @@
 import os
 from typing import Tuple, Dict
+from random.randomize_position import generate_random_position
 from fileio import reader, writter
 from cipher import vigenere_decrypt, vigenere_encrypt
 
@@ -241,7 +242,7 @@ def build_protected_indices(data: bytes) -> set[int]:
       - The 4-byte header for each MP3 frame found
     """
     protected = set()
-    
+
     # Protect ID3v2 tag if present
     id3_end = find_id3v2_end(data)
     if id3_end > 0:
@@ -249,12 +250,12 @@ def build_protected_indices(data: bytes) -> set[int]:
 
     # Find all MP3 frames
     frames = find_mp3_frames(data, start_offset=id3_end, min_consec=3, max_scan=2000000)
-    
+
     for fstart, flen in frames:
         # Protect the entire frame header (4 bytes)
         for i in range(fstart, min(fstart + 4, len(data))):
             protected.add(i)
-            
+
         # For Layer III frames, protect the side information too
         # This is typically 17 bytes for mono, 32 bytes for stereo
         # after the 4-byte header
@@ -264,7 +265,7 @@ def build_protected_indices(data: bytes) -> set[int]:
             protected_end = min(fstart + 36, fstart + flen, len(data))
             for i in range(fstart + 4, protected_end):
                 protected.add(i)
-                
+
             # Also protect the last few bytes which might contain ancillary data
             last_protected_start = max(fstart + 4, fstart + flen - 10)
             for i in range(last_protected_start, fstart + flen):
@@ -328,7 +329,13 @@ def string_to_bit_stream(binary_string: str):
 
 
 def embed(
-    audio_path: str, file_to_hide_path: str, output_path: str, bits_per_sample: int = 2, encrypt: bool = False, key: str | None = None
+    audio_path: str,
+    file_to_hide_path: str,
+    output_path: str,
+    bits_per_sample: int = 2,
+    encrypt: bool = False,
+    key: str | None = None,
+    random_position: bool = False,
 ) -> None:
     """
     Hide a file inside an audio file
@@ -337,6 +344,10 @@ def embed(
         audio_path: Cover audio file path
         file_to_hide_path: Path to the file that will be hidden
         output_path: Path where the steganographic audio will be saved
+        bits_per_sample: Number of LSBs to use for embedding (1-4)
+        encrypt: Whether to encrypt the payload using Vigenère cipher
+        key: Key for encryption/decryption and randomization
+        random_position: Whether to use randomized starting position for embedding
 
     Raises:
         ValueError: If audio file is too small or files cannot be processed
@@ -351,20 +362,32 @@ def embed(
     if encrypt and key is None:
         raise ValueError("If using encryption, provide the key!")
 
+    if random_position and key is None:
+        raise ValueError("If using random position, provide the key!")
+
     # Read files
     carrier = reader.read_mp3_bytes(audio_path)
-
     message_file = reader.read_secret_file(file_to_hide_path)
-
     payload = message_file.content
 
-    # Prepare metadata
-    ext = os.path.splitext(file_to_hide_path)[1].lstrip(".") or "bin"
-    ext_bytes = ext.encode("ascii", errors="replace")  # Use ASCII with replacement
-    if len(ext_bytes) > 255:
-        raise ValueError("Extension too long")
+    # Extract filename (just the name, not the full path)
+    filename = os.path.basename(file_to_hide_path)
+    filename_bytes = filename.encode("utf-8")
+    
+    if len(filename_bytes) > 255:
+        raise ValueError("Filename too long (max 255 bytes)")
 
-    header = len(payload).to_bytes(4, "little") + bytes([len(ext_bytes)]) + ext_bytes
+    # Create header with filename
+    # Structure: [payload_length: 4 bytes][filename_length: 1 byte][filename: N bytes]
+    header = (
+        len(payload).to_bytes(4, "little")
+        + bytes([len(filename_bytes)])
+        + filename_bytes
+    )
+
+    print(f"Embedding file: {filename}")
+    print(f"Filename length: {len(filename_bytes)} bytes")
+    print(f"Payload length: {len(payload)} bytes")
 
     # Get signatures
     start_signature, end_signature = SIGNATURES[bits_per_sample]
@@ -379,7 +402,9 @@ def embed(
     total_bits = signature_bits + data_bits
     capacity_bits = len(usable_positions) * bits_per_sample
 
+    # Encrypt payload if requested
     if encrypt and key is not None:
+        print("Encrypting payload...")
         payload = vigenere_encrypt(data=payload, key=key)
 
     print(f"Bits needed: {total_bits}, Capacity: {capacity_bits}")
@@ -402,6 +427,12 @@ def embed(
         for bit in string_to_bit_stream(end_signature):
             yield bit
 
+    # Handle random positioning if enabled
+    if random_position and key is not None:
+        start_pos = generate_random_position(key, len(usable_positions))
+        usable_positions = usable_positions[start_pos:] + usable_positions[:start_pos]
+        print(f"Using randomized starting position: {start_pos}")
+
     # Embed
     bits = combined_bit_stream()
     mask = (0xFF << bits_per_sample) & 0xFF
@@ -412,25 +443,27 @@ def embed(
             try:
                 bits_val = (bits_val << 1) | next(bits)
             except StopIteration:
-                # Done embedding
                 carrier[carrier_index] = (carrier[carrier_index] & mask) | bits_val
                 with open(output_path, "wb") as out:
                     out.write(carrier)
-                print(
-                    f"Embedded {len(payload)} bytes with signatures using {bits_per_sample}-bit LSB"
-                )
+                print(f"Successfully embedded '{filename}' ({len(payload)} bytes)")
+                print(f"Using {bits_per_sample}-bit LSB steganography")
                 return
 
         carrier[carrier_index] = (carrier[carrier_index] & mask) | bits_val
 
     # Write final result
     writter.write_mp3_bytes(output_path, carrier)
-    print(
-        f"Embedded {len(payload)} bytes with signatures using {bits_per_sample}-bit LSB"
-    )
+    print(f"Successfully embedded '{filename}' ({len(payload)} bytes)")
+    print(f"Using {bits_per_sample}-bit LSB steganography")
 
 
-def detect_bits_per_sample(stego: bytes, usable_positions: list) -> int:
+def detect_bits_per_sample(
+    stego: bytes,
+    usable_positions: list,
+    random_position: bool = False,
+    key: str | None = None,
+) -> int:
     """
     Detect the bits_per_sample by looking for signature patterns at the beginning
     of the usable positions.
@@ -438,84 +471,113 @@ def detect_bits_per_sample(stego: bytes, usable_positions: list) -> int:
     Args:
         stego (bytes): The stego audio data
         usable_positions (list): List of usable byte positions (non-protected)
+        random_position (bool): Whether randomized starting position was used
+        key (str): Key for randomization
 
     Returns:
         int: The detected bits_per_sample (1-4), or raises ValueError if not found
     """
-    # Try each possible bits_per_sample value
-    for bits_per_sample, (start_sig, end_sig) in SIGNATURES.items():
-        try:
-            # Extract bits from the beginning using this bits_per_sample
-            extracted_bits = []
+    # If random position was used, we need to try all possible starting positions
+    positions_to_try = [usable_positions]
 
-            # We need enough positions to read at least the start signature
-            if len(usable_positions) * bits_per_sample < len(start_sig):
+    if random_position and key is not None:
+        # Generate random starting position used during embedding
+        start_pos = generate_random_position(key, len(usable_positions))
+        # Reorder usable positions to match embedding order
+        reordered_positions = (
+            usable_positions[start_pos:] + usable_positions[:start_pos]
+        )
+        positions_to_try = [reordered_positions]
+
+    for positions in positions_to_try:
+        # Try each possible bits_per_sample value
+        for bits_per_sample, (start_sig, end_sig) in SIGNATURES.items():
+            try:
+                # Extract bits from the beginning using this bits_per_sample
+                extracted_bits = []
+
+                # We need enough positions to read at least the start signature
+                if len(positions) * bits_per_sample < len(start_sig):
+                    continue
+
+                # Extract bits using the current bits_per_sample hypothesis
+                for pos_idx in range(
+                    len(start_sig) // bits_per_sample
+                    + (1 if len(start_sig) % bits_per_sample else 0)
+                ):
+                    if pos_idx >= len(positions):
+                        break
+
+                    byte_val = stego[positions[pos_idx]]
+                    # Extract the LSBs according to bits_per_sample
+                    lsb_mask = (1 << bits_per_sample) - 1
+                    lsb_bits = byte_val & lsb_mask
+                    # Convert to binary string and add to extracted bits
+                    for bit_pos in range(bits_per_sample - 1, -1, -1):
+                        bit_val = (lsb_bits >> bit_pos) & 1
+                        extracted_bits.append(str(bit_val))
+
+                # Check if we found the start signature
+                extracted_signature = "".join(extracted_bits[: len(start_sig)])
+                if extracted_signature == start_sig:
+                    return bits_per_sample
+
+            except (IndexError, ValueError):
                 continue
-
-            # Extract bits using the current bits_per_sample hypothesis
-            for pos_idx in range(
-                len(start_sig) // bits_per_sample
-                + (1 if len(start_sig) % bits_per_sample else 0)
-            ):
-                if pos_idx >= len(usable_positions):
-                    break
-
-                byte_val = stego[usable_positions[pos_idx]]
-                # Extract the LSBs according to bits_per_sample
-                lsb_mask = (1 << bits_per_sample) - 1
-                lsb_bits = byte_val & lsb_mask
-
-                # Convert to binary string (most significant bit first)
-                for bit_pos in range(bits_per_sample - 1, -1, -1):
-                    extracted_bits.append(str((lsb_bits >> bit_pos) & 1))
-
-            # Check if we found the start signature
-            extracted_signature = "".join(extracted_bits[: len(start_sig)])
-            if extracted_signature == start_sig:
-                print(f"Detected signature for {bits_per_sample}-bit LSB steganography")
-                return bits_per_sample
-
-        except (IndexError, ValueError):
-            continue
 
     raise ValueError(
         "Could not detect bits_per_sample from signatures. File may not contain embedded data or may be corrupted."
     )
 
 
-def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, key: str | None = None):
+def extract(
+    stego_audio_path: str,
+    output_path: str,
+    encrypted: bool = False,
+    key: str | None = None,
+    random_position: bool = False,
+):
     """
     Extract hidden file from a stego MP3 using signature detection to determine bits_per_sample.
 
     Args:
         stego_audio_path (str): Path to stego audio file
         output_path (str): Path where the extracted file will be saved
+        encrypted (bool): Whether the payload was encrypted
+        key (str): Key for decryption and randomization
+        random_position (bool): Whether randomized starting position was used
     """
     print("Reading stego audio file...")
-    with open(stego_audio_path, "rb") as f:
-        stego = f.read()
+    stego = reader.read_mp3_bytes(stego_audio_path)
 
     print("Building protected indices...")
     protected = build_protected_indices(stego)
     usable_positions = [i for i in range(len(stego)) if i not in protected]
 
     print("Detecting bits per sample from signature...")
-    bits_per_sample = detect_bits_per_sample(stego, usable_positions)
+    bits_per_sample = detect_bits_per_sample(
+        stego, usable_positions, random_position, key
+    )
     print(f"Detected {bits_per_sample} bits per sample")
 
-     # 1. Create a generator that yields every available hidden bit, one by one.
+    # Handle random positioning if enabled
+    if random_position and key is not None:
+        start_pos = generate_random_position(key, len(usable_positions))
+        usable_positions = usable_positions[start_pos:] + usable_positions[:start_pos]
+        print(f"Using randomized starting position: {start_pos}")
+
+    # Create bit stream generator
     def bit_stream_generator():
         for pos in usable_positions:
             byte_val = stego[pos]
             lsb_mask = (1 << bits_per_sample) - 1
             lsb_bits = byte_val & lsb_mask
-            # Yield each bit from the LSB chunk, starting from its most significant bit
             for bit_pos in range(bits_per_sample - 1, -1, -1):
                 yield (lsb_bits >> bit_pos) & 1
 
     bit_gen = bit_stream_generator()
 
-    # 2. Skip the start signature by consuming bits from the generator
+    # Skip the start signature
     start_sig_length = len(SIGNATURES[bits_per_sample][0])
     try:
         for _ in range(start_sig_length):
@@ -523,7 +585,7 @@ def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, ke
     except StopIteration:
         raise ValueError("File is too short to contain a valid signature.")
 
-    # 3. Create a new, simpler read_bits function that uses the generator
+    # Helper function to read bits
     def read_bits(n: int) -> int:
         val = 0
         try:
@@ -543,19 +605,21 @@ def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, ke
 
     print(f"Payload length: {payload_len} bytes")
 
-    # Read extension length
-    ext_len = read_bits(8)
-    ext_bytes = bytes(read_bits(8) for _ in range(ext_len))
+    # Read filename length
+    filename_len = read_bits(8)
+    print(f"Filename length: {filename_len} bytes")
 
-    # Try to decode as ASCII, fallback to raw bytes filename
+    # Read filename
+    filename_bytes = bytes(read_bits(8) for _ in range(filename_len))
+
+    # Try to decode filename as UTF-8
     try:
-        ext = ext_bytes.decode("ascii")
+        filename = filename_bytes.decode("utf-8")
+        print(f"Original filename: {filename}")
     except UnicodeDecodeError:
-        # Use hex representation for invalid extensions
-        ext = "bin"
-        print(f"Warning: Invalid extension bytes, using .{ext}")
-
-    print(f"File extension: .{ext}")
+        # Fallback to a generic name if decoding fails
+        filename = "extracted_file.bin"
+        print(f"Warning: Could not decode filename, using '{filename}'")
 
     # Read payload
     print("Reading payload...")
@@ -563,14 +627,50 @@ def extract(stego_audio_path: str, output_path: str, encrypted: bool = False, ke
     for i in range(payload_len):
         payload[i] = read_bits(8)
 
-    # Look for end signature to verify extraction
+    # Decrypt payload if encryption was used
+    if encrypted and key is not None:
+        print("Decrypting payload...")
+        payload = vigenere_decrypt(data=payload, key=key)
+
+    # Verify end signature (optional)
     print("Verifying end signature...")
-    end_sig = SIGNATURES[bits_per_sample][1]
+    try:
+        end_sig = SIGNATURES[bits_per_sample][1]
+        extracted_end_bits = []
+        
+        for _ in range(len(end_sig)):
+            try:
+                bit = next(bit_gen)
+                extracted_end_bits.append(str(bit))
+            except StopIteration:
+                break
+        
+        extracted_end_signature = "".join(extracted_end_bits)
+        if extracted_end_signature == end_sig:
+            print("✓ End signature verified successfully")
+        else:
+            print("⚠ Warning: End signature mismatch (file may still be valid)")
+    except Exception as e:
+        print(f"⚠ Could not verify end signature: {e}")
+
+    # Ensure output directory exists
+    os.makedirs(output_path, exist_ok=True)
+
+    # Construct full output path with original filename
+    output_file = os.path.join(output_path, filename)
+    
+    # Handle filename conflicts
+    if os.path.exists(output_file):
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(output_file):
+            output_file = os.path.join(output_path, f"{base}_{counter}{ext}")
+            counter += 1
+        print(f"⚠ File exists, saving as: {os.path.basename(output_file)}")
 
     # Write output file
-    output_file = f"{output_path}.{ext}"
     with open(output_file, "wb") as out:
         out.write(payload)
 
-    print(f"Extracted {len(payload)} bytes → {output_file}")
+    print(f"✓ Extracted {len(payload)} bytes → {output_file}")
     return output_file

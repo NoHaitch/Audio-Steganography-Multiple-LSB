@@ -1,0 +1,1 @@
+from .randomize_position import generate_random_position

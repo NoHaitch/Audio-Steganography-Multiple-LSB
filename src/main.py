@@ -61,6 +61,16 @@ def main() -> None:
         required=True,
         help="Path to save the stego MP3 file.",
     )
+    embed_parser.add_argument(
+        "--random",
+        action="store_true",
+        help="Use randomized starting position for embedding (requires --key).",
+    )
+    embed_parser.add_argument(
+        "--key",
+        type=str,
+        help="Key for randomizing start position and/or cipher"
+    )
 
     # ----- Extract -----
     extract_parser = subparsers.add_parser(
@@ -75,6 +85,16 @@ def main() -> None:
         type=Path,
         required=True,
         help="Path or folder to save the extracted secret message.",
+    )
+    extract_parser.add_argument(
+        "--random",
+        action="store_true",
+        help="Use randomized starting position for extraction (requires --key).",
+    )
+    extract_parser.add_argument(
+        "--key",
+        type=str,
+        help="Key for randomizing start position and/or cipher"
     )
 
     # ----- Compare -----
@@ -98,11 +118,30 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Validation for random option
+    if hasattr(args, "random") and args.random and not args.key:
+        print("Error: --random option requires --key to be provided.", file=sys.stderr)
+        sys.exit(1)
+
     if args.command == "embed":
-        embed(args.cover, args.secret, args.output, args.lsb_count)
+        embed(
+            args.cover,
+            args.secret,
+            args.output,
+            args.lsb_count,
+            encrypt=args.cipher,
+            key=args.key,
+            random_position=getattr(args, "random", False),
+        )
 
     elif args.command == "extract":
-        extract(args.input, args.output)
+        extract(
+            args.input,
+            args.output,
+            encrypted=args.cipher,
+            key=args.key,
+            random_position=getattr(args, "random", False),
+        )
 
     elif args.command == "compare":
         try:
