@@ -67,6 +67,11 @@ def main() -> None:
         help="Use randomized starting position for embedding (requires --key).",
     )
     embed_parser.add_argument(
+        "--cipher",
+        action="store_true",
+        help="Encrypt the embedded file using Vigenere cipher"
+    )
+    embed_parser.add_argument(
         "--key",
         type=str,
         help="Key for randomizing start position and/or cipher"
@@ -95,6 +100,11 @@ def main() -> None:
         "--key",
         type=str,
         help="Key for randomizing start position and/or cipher"
+    )
+    extract_parser.add_argument(
+        "--cipher",
+        action="store_true",
+        help="Encrypt the embedded file using Vigenere cipher"
     )
 
     # ----- Compare -----

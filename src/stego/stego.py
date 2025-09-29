@@ -338,7 +338,7 @@ def embed(
     random_position: bool = False,
 ) -> None:
     """
-    Hide a file inside an audio file
+    Hide a file inside an audio file with optional Vigenere encryption
 
     Args:
         audio_path: Cover audio file path
@@ -377,8 +377,16 @@ def embed(
     if len(filename_bytes) > 255:
         raise ValueError("Filename too long (max 255 bytes)")
 
+    # IMPORTANT: Encrypt payload BEFORE creating header
+    # The header should contain the encrypted payload length, not original length
+    if encrypt and key is not None:
+        print("Encrypting payload...")
+        payload = vigenere_encrypt(data=payload, key=key)
+        print(f"Encrypted payload length: {len(payload)} bytes")
+
     # Create header with filename
     # Structure: [payload_length: 4 bytes][filename_length: 1 byte][filename: N bytes]
+    # NOTE: payload_length is AFTER encryption
     header = (
         len(payload).to_bytes(4, "little")
         + bytes([len(filename_bytes)])
@@ -402,11 +410,6 @@ def embed(
     total_bits = signature_bits + data_bits
     capacity_bits = len(usable_positions) * bits_per_sample
 
-    # Encrypt payload if requested
-    if encrypt and key is not None:
-        print("Encrypting payload...")
-        payload = vigenere_encrypt(data=payload, key=key)
-
     print(f"Bits needed: {total_bits}, Capacity: {capacity_bits}")
 
     if total_bits > capacity_bits:
@@ -419,7 +422,7 @@ def embed(
         # Start signature bits
         for bit in string_to_bit_stream(start_signature):
             yield bit
-        # Header and payload bits
+        # Header and payload bits (payload is already encrypted if encrypt=True)
         for byte in header + payload:
             for bitpos in range(7, -1, -1):
                 yield (byte >> bitpos) & 1
@@ -446,7 +449,8 @@ def embed(
                 carrier[carrier_index] = (carrier[carrier_index] & mask) | bits_val
                 with open(output_path, "wb") as out:
                     out.write(carrier)
-                print(f"Successfully embedded '{filename}' ({len(payload)} bytes)")
+                encrypt_status = "with encryption" if encrypt else "without encryption"
+                print(f"Successfully embedded '{filename}' ({len(payload)} bytes) {encrypt_status}")
                 print(f"Using {bits_per_sample}-bit LSB steganography")
                 return
 
@@ -454,7 +458,8 @@ def embed(
 
     # Write final result
     writter.write_mp3_bytes(output_path, carrier)
-    print(f"Successfully embedded '{filename}' ({len(payload)} bytes)")
+    encrypt_status = "with encryption" if encrypt else "without encryption"
+    print(f"Successfully embedded '{filename}' ({len(payload)} bytes) {encrypt_status}")
     print(f"Using {bits_per_sample}-bit LSB steganography")
 
 
@@ -536,17 +541,23 @@ def extract(
     encrypted: bool = False,
     key: str | None = None,
     random_position: bool = False,
-):
+) -> str:
     """
-    Extract hidden file from a stego MP3 using signature detection to determine bits_per_sample.
+    Extract hidden file from a stego MP3 with automatic decryption if needed.
 
     Args:
         stego_audio_path (str): Path to stego audio file
-        output_path (str): Path where the extracted file will be saved
+        output_path (str): Directory where the extracted file will be saved
         encrypted (bool): Whether the payload was encrypted
         key (str): Key for decryption and randomization
         random_position (bool): Whether randomized starting position was used
+        
+    Returns:
+        str: Full path to the extracted file
     """
+    if encrypted and key is None:
+        raise ValueError("If payload is encrypted, provide the key for decryption!")
+
     print("Reading stego audio file...")
     stego = reader.read_mp3_bytes(stego_audio_path)
 
@@ -598,6 +609,7 @@ def extract(
     print("Reading metadata...")
 
     # Read payload length (4 bytes, little-endian)
+    # NOTE: This is the ENCRYPTED payload length if encryption was used
     payload_len = 0
     for i in range(4):
         b = read_bits(8)
@@ -621,16 +633,17 @@ def extract(
         filename = "extracted_file.bin"
         print(f"Warning: Could not decode filename, using '{filename}'")
 
-    # Read payload
+    # Read payload (still encrypted at this point if encryption was used)
     print("Reading payload...")
     payload = bytearray(payload_len)
     for i in range(payload_len):
         payload[i] = read_bits(8)
 
-    # Decrypt payload if encryption was used
+    # Decrypt payload AFTER reading it
     if encrypted and key is not None:
         print("Decrypting payload...")
         payload = vigenere_decrypt(data=payload, key=key)
+        print(f"Decrypted payload length: {len(payload)} bytes")
 
     # Verify end signature (optional)
     print("Verifying end signature...")
