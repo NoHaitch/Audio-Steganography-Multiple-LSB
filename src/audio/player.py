@@ -18,7 +18,7 @@ except ImportError:
     PYDUB_AVAILABLE = False
 
 
-class PythonAudioPlayer:
+class AudioPlayer:
     """Audio player"""
 
     def __init__(self):
@@ -259,4 +259,4 @@ class PythonAudioPlayer:
 
 
 # Global audio player instance
-audio_player = PythonAudioPlayer()
+audio_player = AudioPlayer()
