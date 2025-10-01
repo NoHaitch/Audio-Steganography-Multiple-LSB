@@ -1,6 +1,6 @@
 import os
 from typing import Tuple, Dict
-from random.randomize_position import generate_random_position
+from randomizer.randomize_position import generate_random_position
 from fileio import reader, writter
 from cipher import vigenere_decrypt, vigenere_encrypt
 
