@@ -10,26 +10,6 @@ def main() -> None:
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Seed for pseudo-random embedding location (stego key).",
-    )
-
-    parser.add_argument(
-        "--cipher",
-        action="store_true",
-        help="Use Vigenere cipher for the secret message.",
-    )
-
-    parser.add_argument(
-        "--key",
-        type=str,
-        default=None,
-        help="Key for Vigenere cipher (required if --cipher is set).",
-    )
-
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # ----- Embed -----

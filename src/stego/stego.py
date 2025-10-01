@@ -35,14 +35,14 @@ _BITRATE_TABLE = {
         2: [None, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, None],
         3: [None, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, None],
     },
-    "2": {  # MPEG-2 & 2.5 (uses different table for Layer I vs others)
+    "2": {  # MPEG-2, 2.5
         1: [None, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, None],
         2: [None, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, None],
         3: [None, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, None],
     },
 }
 
-# Sample rate table by version
+# Sample rate
 _SAMPLE_RATE = {
     "1": [44100, 48000, 32000, None],  # MPEG1
     "2": [22050, 24000, 16000, None],  # MPEG2
@@ -59,8 +59,8 @@ def _read_syncsafe_int(b: bytes) -> int:
 
 def find_id3v2_end(data: bytes) -> int:
     """
-    If an ID3v2 tag is present at the start, return the offset where it ends.
-    Otherwise return 0.
+    If an ID3v2 tag is present at the start, return the offset where it ends
+    Otherwise return 0
     """
     if len(data) < 10:
         return 0
@@ -74,15 +74,14 @@ def find_id3v2_end(data: bytes) -> int:
 
 def _parse_frame_header(header_bytes: bytes) -> Tuple[bool, dict]:
     """
-    Parse 4 bytes of MP3 header. Return (valid, info_dict).
-    info_dict includes: version_key ('1' or '2'/'2.5'), layer (1/2/3), bitrate_kbps, sample_rate, padding, frame_length
-    If invalid, return (False, {}).
+    Parse 4 bytes of MP3 header
+    { version_key ('1' or '2'/'2.5'), layer (1/2/3), bitrate_kbps, sample_rate, padding, frame_length }
     """
     if len(header_bytes) < 4:
         return False, {}
     h = int.from_bytes(header_bytes, "big")
 
-    sync = (h >> 21) & 0x7FF  # 11 bits
+    sync = (h >> 21) & 0x7FF  # 11-bit
     if sync != 0x7FF:
         return False, {}
 
@@ -93,8 +92,7 @@ def _parse_frame_header(header_bytes: bytes) -> Tuple[bool, dict]:
     sample_rate_index = (h >> 10) & 0x3
     padding_bit = (h >> 9) & 0x1
 
-    # version decode
-    # 00 -> MPEG 2.5, 01 -> reserved, 10 -> MPEG2, 11 -> MPEG1
+    # Version decode: 00: MPEG 2.5, 01: reserved, 10: MPEG2, 11: MPEG1
     if version_bits == 0:
         version = "2.5"
         version_key = "2"
@@ -107,17 +105,14 @@ def _parse_frame_header(header_bytes: bytes) -> Tuple[bool, dict]:
         version = "1"
         version_key = "1"
 
-    # layer decode
-    # 00 -> reserved, 01 -> Layer III, 10 -> Layer II, 11 -> Layer I
+    # Layer decode: 00: reserved, 01: Layer 3, 10: Layer 2, 11: Layer 1
     if layer_bits == 0:
         return False, {}
-    layer = {1: 3, 2: 2, 3: 1}[layer_bits]  # map bits to layer number (1/2/3)
+    layer = {1: 3, 2: 2, 3: 1}[layer_bits]
 
-    # bitrate index check
     if bitrate_index == 0 or bitrate_index == 15:
         return False, {}
 
-    # sample rate
     sample_rates = (
         _SAMPLE_RATE["1"]
         if version == "1"
@@ -127,7 +122,6 @@ def _parse_frame_header(header_bytes: bytes) -> Tuple[bool, dict]:
     if sample_rate is None:
         return False, {}
 
-    # bitrate
     bitrates = _BITRATE_TABLE[version_key].get(layer)
     if not bitrates:
         return False, {}
@@ -135,16 +129,15 @@ def _parse_frame_header(header_bytes: bytes) -> Tuple[bool, dict]:
     if bitrate_kbps is None:
         return False, {}
 
-    # compute frame length
     if layer == 1:
-        # Layer I
+        # Layer 1
         frame_length = int((12 * bitrate_kbps * 1000 / sample_rate + padding_bit) * 4)
     else:
-        # Layer II & III
+        # Layer 2 3
         if version == "1":
             frame_length = int(144000 * bitrate_kbps / sample_rate + padding_bit)
         else:
-            # MPEG-2/2.5, layer II/III: uses 72000 scaling for Layer III
+            # MPEG2/MPEG2.5
             if layer == 3:
                 frame_length = int(72000 * bitrate_kbps / sample_rate + padding_bit)
             else:
@@ -165,20 +158,20 @@ def find_mp3_frames(
     data: bytes, start_offset: int = 0, min_consec: int = 3, max_scan: int | None = None
 ) -> list[Tuple[int, int]]:
     """
-    Find plausible MP3 frames by scanning for sync words and validating headers.
-    Returns list of (frame_offset, frame_length).
-    min_consec: require this many consecutive valid frames to increase confidence.
-    max_scan: if set, limit scanning to first max_scan bytes after start_offset.
+    Find MP3 frames by scanning sync words and validating headers
+    Return list of (frame_offset, frame_length)
+    min_consec: require this many consecutive valid frames to increase confidence
+    max_scan: if set, limit scanning to first max_scan bytes after start_offset
     """
     pos = start_offset
     n = len(data)
     frames = []
     limit = n if max_scan is None else min(n, start_offset + max_scan)
 
-    # We'll use a two-pass: when we see a valid header we tentatively accept it and check the next frame.
+    # Check if see a valid header then check the next frame
     while pos + 4 <= limit:
-        # fast sync check: two bytes 0xFF Ex (first 11 bits ones)
-        # but we'll call full parser
+        # fast sync check: two bytes 0xFF Ex (first 11-bits)
+        # after that full parser
         valid, info = _parse_frame_header(data[pos : pos + 4])
         if not valid:
             pos += 1
@@ -192,14 +185,14 @@ def find_mp3_frames(
 
         # quick validation: check next frame header exists at pos + frame_len
         next_pos = pos + frame_len
-        valid2, info2 = (False, {})
+        valid2, _ = (False, {})
         if next_pos + 4 <= limit:
-            valid2, info2 = _parse_frame_header(data[next_pos : next_pos + 4])
+            valid2, _ = _parse_frame_header(data[next_pos : next_pos + 4])
 
         if not valid2:
             # try to be tolerant: look ahead a couple of bytes (resync possible)
-            # but for our purpose we require min_consec frames to be confident.
-            # We'll still accept single frames but continue scanning.
+            # but for our purpose we require min_consec frames to be confident
+            # We'll still accept single frames but continue scanning
             frames.append((pos, frame_len))
             pos += frame_len
             continue
@@ -223,7 +216,7 @@ def find_mp3_frames(
                 # add all frames in the run
                 cur2 = run_start
                 for _ in range(count):
-                    valid_run, info_run = _parse_frame_header(data[cur2 : cur2 + 4])
+                    _, info_run = _parse_frame_header(data[cur2 : cur2 + 4])
                     frames.append((cur2, info_run["frame_length"]))
                     cur2 += info_run["frame_length"]
                 pos = cur2
@@ -373,7 +366,7 @@ def embed(
     # Extract filename (just the name, not the full path)
     filename = os.path.basename(file_to_hide_path)
     filename_bytes = filename.encode("utf-8")
-    
+
     if len(filename_bytes) > 255:
         raise ValueError("Filename too long (max 255 bytes)")
 
@@ -431,30 +424,43 @@ def embed(
             yield bit
 
     # Handle random positioning if enabled
+    start_offset = 0
     if random_position and key is not None:
-        start_pos = generate_random_position(key, len(usable_positions))
-        usable_positions = usable_positions[start_pos:] + usable_positions[:start_pos]
-        print(f"Using randomized starting position: {start_pos}")
+        start_offset = generate_random_position(key, len(usable_positions))
+        print(f"Using randomized starting position: {start_offset}")
 
-    # Embed
+    # Embed using circular indexing
     bits = combined_bit_stream()
     mask = (0xFF << bits_per_sample) & 0xFF
 
-    for carrier_index in usable_positions:
+    position_index = 0  # Index into usable_positions array
+    total_positions = len(usable_positions)
+
+    for _ in range(total_positions):  # Maximum iterations to prevent infinite loop
+        # Calculate actual position with circular wrapping
+        actual_position_index = (start_offset + position_index) % total_positions
+        carrier_index = usable_positions[actual_position_index]
+
         bits_val = 0
         for _ in range(bits_per_sample):
             try:
                 bits_val = (bits_val << 1) | next(bits)
             except StopIteration:
                 carrier[carrier_index] = (carrier[carrier_index] & mask) | bits_val
-                with open(output_path, "wb") as out:
-                    out.write(carrier)
+                writter.write_mp3_bytes(output_path, carrier)
                 encrypt_status = "with encryption" if encrypt else "without encryption"
-                print(f"Successfully embedded '{filename}' ({len(payload)} bytes) {encrypt_status}")
+                print(
+                    f"Successfully embedded '{os.path.basename(file_to_hide_path)}' ({len(payload)} bytes) {encrypt_status}"
+                )
                 print(f"Using {bits_per_sample}-bit LSB steganography")
+                if random_position:
+                    print(
+                        f"Data embedded with circular wrapping from position {start_offset}"
+                    )
                 return
 
         carrier[carrier_index] = (carrier[carrier_index] & mask) | bits_val
+        position_index += 1
 
     # Write final result
     writter.write_mp3_bytes(output_path, carrier)
@@ -471,7 +477,7 @@ def detect_bits_per_sample(
 ) -> int:
     """
     Detect the bits_per_sample by looking for signature patterns at the beginning
-    of the usable positions.
+    of the usable positions
 
     Args:
         stego (bytes): The stego audio data
@@ -482,53 +488,52 @@ def detect_bits_per_sample(
     Returns:
         int: The detected bits_per_sample (1-4), or raises ValueError if not found
     """
-    # If random position was used, we need to try all possible starting positions
-    positions_to_try = [usable_positions]
-
+    # Calculate starting offset for circular indexing
+    start_offset = 0
     if random_position and key is not None:
-        # Generate random starting position used during embedding
-        start_pos = generate_random_position(key, len(usable_positions))
-        # Reorder usable positions to match embedding order
-        reordered_positions = (
-            usable_positions[start_pos:] + usable_positions[:start_pos]
-        )
-        positions_to_try = [reordered_positions]
+        start_offset = generate_random_position(key, len(usable_positions))
 
-    for positions in positions_to_try:
-        # Try each possible bits_per_sample value
-        for bits_per_sample, (start_sig, end_sig) in SIGNATURES.items():
-            try:
-                # Extract bits from the beginning using this bits_per_sample
-                extracted_bits = []
+    total_positions = len(usable_positions)
 
-                # We need enough positions to read at least the start signature
-                if len(positions) * bits_per_sample < len(start_sig):
-                    continue
+    # Try each possible bits_per_sample value
+    for bits_per_sample, (start_sig, end_sig) in SIGNATURES.items():
+        try:
+            # Extract bits from the beginning using this bits_per_sample
+            extracted_bits = []
 
-                # Extract bits using the current bits_per_sample hypothesis
-                for pos_idx in range(
-                    len(start_sig) // bits_per_sample
-                    + (1 if len(start_sig) % bits_per_sample else 0)
-                ):
-                    if pos_idx >= len(positions):
-                        break
+            # We need enough positions to read at least the start signature
+            if total_positions * bits_per_sample < len(start_sig):
+                continue
 
-                    byte_val = stego[positions[pos_idx]]
-                    # Extract the LSBs according to bits_per_sample
-                    lsb_mask = (1 << bits_per_sample) - 1
-                    lsb_bits = byte_val & lsb_mask
-                    # Convert to binary string and add to extracted bits
-                    for bit_pos in range(bits_per_sample - 1, -1, -1):
+            # Extract bits using circular indexing
+            bits_needed = len(start_sig)
+            positions_needed = (bits_needed + bits_per_sample - 1) // bits_per_sample
+
+            for pos_idx in range(positions_needed):
+                if pos_idx >= total_positions:
+                    break
+
+                # Calculate actual position with circular wrapping
+                actual_position_index = (start_offset + pos_idx) % total_positions
+                byte_val = stego[usable_positions[actual_position_index]]
+
+                # Extract the LSBs according to bits_per_sample
+                lsb_mask = (1 << bits_per_sample) - 1
+                lsb_bits = byte_val & lsb_mask
+
+                # Convert to binary string and add to extracted bits
+                for bit_pos in range(bits_per_sample - 1, -1, -1):
+                    if len(extracted_bits) < bits_needed:
                         bit_val = (lsb_bits >> bit_pos) & 1
                         extracted_bits.append(str(bit_val))
 
-                # Check if we found the start signature
-                extracted_signature = "".join(extracted_bits[: len(start_sig)])
-                if extracted_signature == start_sig:
-                    return bits_per_sample
+            # Check if we found the start signature
+            extracted_signature = "".join(extracted_bits[: len(start_sig)])
+            if extracted_signature == start_sig:
+                return bits_per_sample
 
-            except (IndexError, ValueError):
-                continue
+        except (IndexError, ValueError):
+            continue
 
     raise ValueError(
         "Could not detect bits_per_sample from signatures. File may not contain embedded data or may be corrupted."
@@ -543,7 +548,7 @@ def extract(
     random_position: bool = False,
 ) -> str:
     """
-    Extract hidden file from a stego MP3 with automatic decryption if needed.
+    Extract hidden file from a stego MP3 with automatic decryption if needed
 
     Args:
         stego_audio_path (str): Path to stego audio file
@@ -551,7 +556,7 @@ def extract(
         encrypted (bool): Whether the payload was encrypted
         key (str): Key for decryption and randomization
         random_position (bool): Whether randomized starting position was used
-        
+
     Returns:
         str: Full path to the extracted file
     """
@@ -571,20 +576,33 @@ def extract(
     )
     print(f"Detected {bits_per_sample} bits per sample")
 
-    # Handle random positioning if enabled
+    # Calculate starting offset for circular indexing
+    start_offset = 0
     if random_position and key is not None:
-        start_pos = generate_random_position(key, len(usable_positions))
-        usable_positions = usable_positions[start_pos:] + usable_positions[:start_pos]
-        print(f"Using randomized starting position: {start_pos}")
+        start_offset = generate_random_position(key, len(usable_positions))
+        print(f"Using randomized starting position: {start_offset}")
 
-    # Create bit stream generator
+    # Create bit stream generator with circular indexing
     def bit_stream_generator():
-        for pos in usable_positions:
+        position_index = 0
+        total_positions = len(usable_positions)
+
+        while True:  # Generator that can handle circular wrapping
+            # Calculate actual position with circular wrapping
+            actual_position_index = (start_offset + position_index) % total_positions
+            pos = usable_positions[actual_position_index]
+
             byte_val = stego[pos]
             lsb_mask = (1 << bits_per_sample) - 1
             lsb_bits = byte_val & lsb_mask
+
             for bit_pos in range(bits_per_sample - 1, -1, -1):
                 yield (lsb_bits >> bit_pos) & 1
+
+            position_index += 1
+            # Prevent infinite loop - though this should be controlled by caller
+            if position_index >= total_positions * 2:  # Allow up to 2 full cycles
+                break
 
     bit_gen = bit_stream_generator()
 
@@ -593,8 +611,8 @@ def extract(
     try:
         for _ in range(start_sig_length):
             next(bit_gen)
-    except StopIteration:
-        raise ValueError("File is too short to contain a valid signature.")
+    except StopIteration as e:
+        raise ValueError("File is too short to contain a valid signature.") from e
 
     # Helper function to read bits
     def read_bits(n: int) -> int:
@@ -602,8 +620,10 @@ def extract(
         try:
             for _ in range(n):
                 val = (val << 1) | next(bit_gen)
-        except StopIteration:
-            raise ValueError("Unexpected end of data while reading file content.")
+        except StopIteration as e:
+            raise ValueError(
+                "Unexpected end of data while reading file content."
+            ) from e
         return val
 
     print("Reading metadata...")
@@ -650,28 +670,28 @@ def extract(
     try:
         end_sig = SIGNATURES[bits_per_sample][1]
         extracted_end_bits = []
-        
+
         for _ in range(len(end_sig)):
             try:
                 bit = next(bit_gen)
                 extracted_end_bits.append(str(bit))
             except StopIteration:
                 break
-        
+
         extracted_end_signature = "".join(extracted_end_bits)
         if extracted_end_signature == end_sig:
-            print("✓ End signature verified successfully")
+            print("End signature verified successfully")
         else:
             print("⚠ Warning: End signature mismatch (file may still be valid)")
     except Exception as e:
-        print(f"⚠ Could not verify end signature: {e}")
+        print(f"Could not verify end signature: {e}")
 
     # Ensure output directory exists
     os.makedirs(output_path, exist_ok=True)
 
     # Construct full output path with original filename
     output_file = os.path.join(output_path, filename)
-    
+
     # Handle filename conflicts
     if os.path.exists(output_file):
         base, ext = os.path.splitext(filename)
