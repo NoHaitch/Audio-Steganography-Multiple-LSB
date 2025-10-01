@@ -5,6 +5,8 @@ from fileio import reader, writter
 from cipher import vigenere_decrypt, vigenere_encrypt
 
 
+# Marker to let program know which n-bits used in LSB, so if program want to extract hidden file,
+# they will use this reference
 SIGNATURES: Dict[int, Tuple[str, str]] = {
     1: ("10101010101010", "10101010101010"),  # 1bit
     2: ("01010101010101", "01010101010101"),  # 2bit
@@ -12,7 +14,8 @@ SIGNATURES: Dict[int, Tuple[str, str]] = {
     4: ("01010101010101", "10101010101010"),  # 4bit
 }
 
-_BITRATE_TABLE = {
+# Show how many data used each second
+BITRATE_TABLE = {
     "1": {  # MPEG-1
         1: [
             None,
@@ -43,15 +46,25 @@ _BITRATE_TABLE = {
 }
 
 # Sample rate
-_SAMPLE_RATE = {
+SAMPLE_RATE = {
     "1": [44100, 48000, 32000, None],  # MPEG1
     "2": [22050, 24000, 16000, None],  # MPEG2
     "2.5": [11025, 12000, 8000, None],  # MPEG2.5
 }
 
 
-def _read_syncsafe_int(b: bytes) -> int:
-    """Read 4 bytes syncsafe integer used in ID3v2 size (only 7 bits per byte)."""
+def calculate_syncsafe(b: bytes) -> int:
+    """
+    Calculate the size of the ID3v2 tag. Only use 7 bits per byte (1 bit MSB not used).
+    Syncsafe implemented to prevent existence of pattern 0xFF (1111 1111) because it is marker
+    of the beginning of audio frame
+
+    Args:
+        b (bytes)
+
+    Returns:
+        int: size of the ID3v2 tag
+    """
     if len(b) != 4:
         return 0
     return (b[0] << 21) | (b[1] << 14) | (b[2] << 7) | b[3]
@@ -61,13 +74,19 @@ def find_id3v2_end(data: bytes) -> int:
     """
     If an ID3v2 tag is present at the start, return the offset where it ends
     Otherwise return 0
+
+    Args:
+        data (bytes)
+
+    Returns:
+        int: offset of the MP3 where ID3v2 finished
     """
     if len(data) < 10:
         return 0
     if data[0:3] != b"ID3":
         return 0
     # ID3v2 header: 10 bytes; bytes 6..9 = size (syncsafe)
-    size = _read_syncsafe_int(data[6:10])
+    size = calculate_syncsafe(data[6:10])
     # total size = header(10) + size
     return 10 + size
 
@@ -114,15 +133,15 @@ def _parse_frame_header(header_bytes: bytes) -> Tuple[bool, dict]:
         return False, {}
 
     sample_rates = (
-        _SAMPLE_RATE["1"]
+        SAMPLE_RATE["1"]
         if version == "1"
-        else (_SAMPLE_RATE["2"] if version == "2" else _SAMPLE_RATE["2.5"])
+        else (SAMPLE_RATE["2"] if version == "2" else SAMPLE_RATE["2.5"])
     )
     sample_rate = sample_rates[sample_rate_index]
     if sample_rate is None:
         return False, {}
 
-    bitrates = _BITRATE_TABLE[version_key].get(layer)
+    bitrates = BITRATE_TABLE[version_key].get(layer)
     if not bitrates:
         return False, {}
     bitrate_kbps = bitrates[bitrate_index]
@@ -552,7 +571,8 @@ def extract(
 
     Args:
         stego_audio_path (str): Path to stego audio file
-        output_path (str): Directory where the extracted file will be saved
+        output_path (str): Directory w
+here the extracted file will be saved
         encrypted (bool): Whether the payload was encrypted
         key (str): Key for decryption and randomization
         random_position (bool): Whether randomized starting position was used
