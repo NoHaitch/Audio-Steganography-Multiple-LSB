@@ -8,7 +8,7 @@ sys.path.insert(0, str(src_path))
 
 try:
     # Import and run the GUI
-    from gui_simple import main
+    from gui import run_gui
     import flet as ft
 
     print("Starting Audio Steganography GUI...")
@@ -16,7 +16,7 @@ try:
     print("pip install -r requirements.txt")
     print("")
 
-    ft.app(target=main)
+    ft.app(target=run_gui)
 
 except ImportError as e:
     print(f"Import error: {e}")

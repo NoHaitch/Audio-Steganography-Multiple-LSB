@@ -1,7 +1,9 @@
 import argparse
 import sys
 from pathlib import Path
+import flet as ft
 from stego import compare_mp3_files, embed, extract
+from gui import run_gui
 
 
 def main() -> None:
@@ -11,6 +13,11 @@ def main() -> None:
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # GUI
+    gui_parser = subparsers.add_parser(
+        "gui", help="Run program in GUI"
+    )
 
     # ----- Embed -----
     embed_parser = subparsers.add_parser(
@@ -148,6 +155,23 @@ def main() -> None:
             exc_type = type(e).__name__
             print(f"[{exc_type}] Failed to compare: {e}", file=sys.stderr)
             sys.exit(1)
+
+    elif args.command == "gui":
+        try:
+            print("Starting Audio Steganography GUI\n")
+
+            ft.app(target=run_gui)
+
+        except ImportError as e:
+            print(f"Import error: {e}")
+            sys.exit(1)
+
+        except Exception as e:
+            print(f"Error starting GUI: {e}")
+            sys.exit(1)
+
+
+
 
     else:
         parser.print_help()

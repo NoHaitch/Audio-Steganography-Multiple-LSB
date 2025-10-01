@@ -1,16 +1,15 @@
-import flet as ft
 import os
 import sys
 import threading
 from pathlib import Path
 from typing import Optional
 
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import flet as ft
 
 from stego import embed, extract, compare_mp3_files
 from audio import audio_player
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 class AudioSteganographyGUI:
     def __init__(self, page: ft.Page):
@@ -736,6 +735,8 @@ class AudioSteganographyGUI:
 
                 # Get parameters
                 encrypted = self.extract_encrypt_checkbox.value
+                if encrypted is None:
+                    encrypted = False
                 random_pos = self.extract_random_checkbox.value
                 key = (
                     self.extract_key_textfield.value
@@ -849,7 +850,7 @@ class AudioSteganographyGUI:
         audio_player.cleanup()
 
 
-def main(page: ft.Page):
+def run_gui(page: ft.Page):
     app = AudioSteganographyGUI(page)
 
     # Handle window close
@@ -858,8 +859,4 @@ def main(page: ft.Page):
             app.cleanup()
 
     page.window.prevent_close = True
-    page.on_window_event = on_window_event
 
-
-if __name__ == "__main__":
-    ft.app(target=main)

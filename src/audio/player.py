@@ -1,9 +1,9 @@
-import pygame
 import threading
 import time
 from pathlib import Path
 from typing import Optional
 import librosa
+import pygame
 
 
 class AudioPlayer:
@@ -38,7 +38,7 @@ class AudioPlayer:
             try:
                 y, sr = librosa.load(path_obj, sr=None)
                 self.duration = len(y) / sr
-            except:
+            except Exception:
                 self.duration = 0.0
 
             # Load with pygame
