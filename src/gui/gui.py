@@ -35,11 +35,10 @@ class GUI:
         self.status_text = ft.Text("Ready", size=14, color="green")
         self.progress_bar = ft.ProgressBar(visible=False)
 
-        # Initialize UI
         self.setup_ui()
 
     def show_notification(self, message: str, color: str = "green"):
-        """Show a notification message to the user."""
+        """Show notification when operation completed"""
         snack_bar = ft.SnackBar(
             content=ft.Text(message, color="white"),
             bgcolor=color,
@@ -408,7 +407,7 @@ class GUI:
         )
 
     def create_player_tab(self):
-        """Create the audio player tab content."""
+        """Tab audio player"""
 
         # Player controls
         self.player_file_text = ft.Text("No audio file loaded", size=12)
@@ -509,7 +508,8 @@ class GUI:
             padding=ft.padding.all(10),
         )
 
-    # File selection methods
+
+    # File selection
     def select_cover_audio(self, e):
         def on_result(result: ft.FilePickerResultEvent):
             if result.files:
@@ -526,6 +526,7 @@ class GUI:
             allowed_extensions=["mp3"],
         )
 
+
     def select_secret_file(self, e):
         def on_result(result: ft.FilePickerResultEvent):
             if result.files:
@@ -537,6 +538,7 @@ class GUI:
         self.page.overlay.append(file_picker)
         self.page.update()
         file_picker.pick_files(dialog_title="Select Secret File")
+
 
     def select_output_audio(self, e):
         def on_result(result: ft.FilePickerResultEvent):
@@ -552,7 +554,7 @@ class GUI:
         self.page.update()
         file_picker.save_file(
             dialog_title="Save Stego Audio As",
-            file_name="stego_output.mp3",
+            file_name="out1.mp3",
             file_type=ft.FilePickerFileType.CUSTOM,
             allowed_extensions=["mp3"],
         )
@@ -573,6 +575,7 @@ class GUI:
             allowed_extensions=["mp3"],
         )
 
+
     def select_extract_output(self, e):
         def on_result(result: ft.FilePickerResultEvent):
             if result.path:
@@ -586,6 +589,7 @@ class GUI:
         self.page.overlay.append(file_picker)
         self.page.update()
         file_picker.get_directory_path(dialog_title="Select Output Folder")
+
 
     def select_compare_original(self, e):
         def on_result(result: ft.FilePickerResultEvent):
@@ -605,6 +609,7 @@ class GUI:
             allowed_extensions=["mp3"],
         )
 
+
     def select_compare_modified(self, e):
         def on_result(result: ft.FilePickerResultEvent):
             if result.files:
@@ -622,6 +627,7 @@ class GUI:
             file_type=ft.FilePickerFileType.CUSTOM,
             allowed_extensions=["mp3"],
         )
+
 
     def select_player_audio(self, e):
         def on_result(result: ft.FilePickerResultEvent):
@@ -651,6 +657,7 @@ class GUI:
             allowed_extensions=["mp3", "wav", "ogg"],
         )
 
+
     # Event handlers
     def on_encrypt_change(self, e):
         self.update_key_field()
@@ -676,7 +683,8 @@ class GUI:
         self.extract_key_textfield.disabled = not needs_key
         self.page.update()
 
-    # Audio player methods
+
+    # Audio player
     def toggle_play(self, e):
         if audio_player.is_file_playing():
             audio_player.pause()
@@ -721,7 +729,6 @@ class GUI:
 
             self.position_text.value = f"{pos_str} / {dur_str}"
 
-            # Update seek slider
             if duration > 0:
                 self.seek_slider.value = (position / duration) * 100
 
@@ -733,28 +740,27 @@ class GUI:
 
             time.sleep(0.5)
 
+
     def format_time(self, seconds: float) -> str:
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes:02d}:{seconds:02d}"
 
-    # Main operations
+
     def perform_embed(self, e):
-        """Perform the embedding operation."""
+        """Embedding"""
         if not self.validate_embed_inputs():
             return
 
         def embed_worker():
             try:
-                self.set_status("Embedding...", True)
+                self.set_status("Embedding", True)
 
-                # Get parameters
                 lsb_count = int(self.lsb_count_dropdown.value or "2")
                 encrypt = self.encrypt_checkbox.value
                 random_pos = self.random_position_checkbox.value
                 key = self.key_textfield.value if (encrypt or random_pos) else None
 
-                # Perform embedding
                 embed(
                     audio_path=self.cover_audio_path,
                     file_to_hide_path=self.secret_file_path,
@@ -765,26 +771,25 @@ class GUI:
                     random_position=random_pos,
                 )
 
-                self.set_status("Embedding completed successfully!", False, "green")
-                self.show_notification("✅ Secret file embedded successfully!", "green")
+                self.set_status("Embedding completed", False, "green")
+                self.show_notification("Secret file embedded successfully", "green")
 
             except Exception as ex:
                 error_msg = f"Embedding failed: {str(ex)}"
                 self.set_status(error_msg, False, "red")
-                self.show_notification(f"❌ {error_msg}", "red")
+                self.show_notification(f"{error_msg}", "red")
 
         threading.Thread(target=embed_worker, daemon=True).start()
 
     def perform_extract(self, e):
-        """Perform the extraction operation."""
+        """Extraction"""
         if not self.validate_extract_inputs():
             return
 
         def extract_worker():
             try:
-                self.set_status("Extracting...", True)
+                self.set_status("Extracting", True)
 
-                # Get parameters
                 encrypted = self.extract_encrypt_checkbox.value
                 if encrypted is None:
                     encrypted = False
@@ -795,7 +800,6 @@ class GUI:
                     else None
                 )
 
-                # Perform extraction
                 extracted_file = extract(
                     stego_audio_path=self.stego_audio_path,
                     output_path=self.extract_output_folder,
@@ -805,30 +809,30 @@ class GUI:
                 )
 
                 self.set_status(
-                    f"Extraction completed! File saved: {os.path.basename(extracted_file)}",
+                    f"File saved: {os.path.basename(extracted_file)}",
                     False,
                     "green",
                 )
                 self.show_notification(
-                    f"✅ Secret file extracted successfully! Saved: {os.path.basename(extracted_file)}",
+                    f"Saved: {os.path.basename(extracted_file)}",
                     "green",
                 )
 
             except Exception as ex:
                 error_msg = f"Extraction failed: {str(ex)}"
                 self.set_status(error_msg, False, "red")
-                self.show_notification(f"❌ {error_msg}", "red")
+                self.show_notification(f"{error_msg}", "red")
 
         threading.Thread(target=extract_worker, daemon=True).start()
 
     def perform_compare(self, e):
-        """Perform the PSNR comparison."""
+        """PSNR comparison"""
         if not self.validate_compare_inputs():
             return
 
         def compare_worker():
             try:
-                self.set_status("Comparing audio files...", True)
+                self.set_status("Comparing audio files", True)
 
                 # Perform comparison
                 psnr_value = compare_mp3_files(
@@ -839,20 +843,15 @@ class GUI:
                 self.psnr_result_text.value = f"PSNR: {psnr_value:.4f} dB"
                 self.psnr_result_text.color = "blue"
 
-                self.set_status("Comparison completed successfully!", False, "green")
+                self.set_status("Comparison completed successfully", False, "green")
 
-                # Show notification with quality assessment
-                if psnr_value > 60:
-                    quality = "Excellent quality preservation!"
-                elif psnr_value > 40:
-                    quality = "Good quality preservation!"
-                elif psnr_value > 20:
-                    quality = "Moderate quality preservation"
+                if psnr_value > 30:
+                    quality = "Good quality"
                 else:
-                    quality = "Low quality preservation"
+                    quality = "Low quality"
 
                 self.show_notification(
-                    f"✅ PSNR: {psnr_value:.2f} dB - {quality}", "blue"
+                    f"PSNR: {psnr_value:.2f} dB - {quality}", "blue"
                 )
 
             except Exception as ex:
@@ -860,7 +859,7 @@ class GUI:
                 self.set_status(error_msg, False, "red")
                 self.psnr_result_text.value = "Comparison failed"
                 self.psnr_result_text.color = "red"
-                self.show_notification(f"❌ {error_msg}", "red")
+                self.show_notification(f"{error_msg}", "red")
 
         threading.Thread(target=compare_worker, daemon=True).start()
 
@@ -918,7 +917,7 @@ class GUI:
         self.set_status(f"Error: {message}", False, "red")
 
     def cleanup(self):
-        """Clean up resources."""
+        """Clean up resources"""
         self.stop_position_thread = True
         audio_player.cleanup()
 
@@ -926,7 +925,6 @@ class GUI:
 def run_gui(page: ft.Page):
     app = GUI(page)
 
-    # Handle window close
     def on_window_event(e):
         if e.data == "close":
             app.cleanup()
