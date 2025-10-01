@@ -1,1 +1,1 @@
-from .player import AudioPlayer, audio_player
+from .player import audio_player

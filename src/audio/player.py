@@ -2,22 +2,46 @@ import threading
 import time
 from pathlib import Path
 from typing import Optional
-import librosa
-import pygame
+
+try:
+    import pyaudio
+
+    PYAUDIO_AVAILABLE = True
+except ImportError:
+    PYAUDIO_AVAILABLE = False
+
+try:
+    from pydub import AudioSegment
+
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
 
 
-class AudioPlayer:
-    """Simple audio player using pygame for MP3 files."""
+class PythonAudioPlayer:
+    """Audio player using Python libraries (pydub + pyaudio)."""
 
     def __init__(self):
-        pygame.mixer.init()
         self.current_file: Optional[str] = None
+        self.audio_segment: Optional[AudioSegment] = None
         self.is_playing = False
         self.is_paused = False
-        self.position = 0.0
-        self.duration = 0.0
-        self._position_thread: Optional[threading.Thread] = None
-        self._stop_thread = False
+        self.position = 0.0  # Current position in seconds
+        self.duration = 0.0  # Total duration in seconds
+        self.volume = 0.5  # Volume (0.0 to 1.0)
+
+        # Playback thread management
+        self._playback_thread: Optional[threading.Thread] = None
+        self._stop_playback = False
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # Start unpaused
+
+        # PyAudio setup
+        self.pyaudio_instance = None
+        self.stream = None
+
+        if PYAUDIO_AVAILABLE:
+            self.pyaudio_instance = pyaudio.PyAudio()
 
     def load_file(self, file_path: str) -> bool:
         """
@@ -30,60 +54,97 @@ class AudioPlayer:
             bool: True if successful, False otherwise
         """
         try:
-            path_obj = Path(file_path)
-            if not path_obj.exists():
+            if not PYDUB_AVAILABLE:
+                print(
+                    "Error: pydub not available. Please install with: pip install pydub"
+                )
                 return False
 
-            # Get duration using librosa
-            try:
-                y, sr = librosa.load(path_obj, sr=None)
-                self.duration = len(y) / sr
-            except Exception:
-                self.duration = 0.0
+            path_obj = Path(file_path)
+            if not path_obj.exists():
+                print(f"Error: File does not exist: {file_path}")
+                return False
 
-            # Load with pygame
-            pygame.mixer.music.load(file_path)
+            # Stop current playback
+            self.stop()
+
+            # Load audio file
+            self.audio_segment = AudioSegment.from_file(file_path)
             self.current_file = file_path
+            self.duration = len(self.audio_segment) / 1000.0  # Convert ms to seconds
             self.position = 0.0
+
+            print(f"Loaded audio file: {file_path}")
+            print(f"Duration: {self.duration:.2f} seconds")
             return True
 
-        except:
-            print(f"Error loading audio file: {file_path}")
+        except Exception as e:
+            print(f"Error loading audio file {file_path}: {e}")
             return False
 
     def play(self) -> bool:
         """Start or resume playback."""
+        if not self.audio_segment:
+            print("No audio file loaded")
+            return False
+
         try:
-            if self.current_file is None:
-                return False
-
             if self.is_paused:
-                pygame.mixer.music.unpause()
+                # Resume playback
+                self._pause_event.set()
                 self.is_paused = False
-            else:
-                pygame.mixer.music.play()
-                self._start_position_tracking()
+                print("Resumed playback")
+                return True
 
+            if self.is_playing:
+                return True
+
+            # Start new playback
             self.is_playing = True
+            self._stop_playback = False
+            self._pause_event.set()
+
+            self._playback_thread = threading.Thread(target=self._playback_worker)
+            self._playback_thread.daemon = True
+            self._playback_thread.start()
+
+            print("Started playback")
             return True
 
-        except:
-            print("Error playing audio")
+        except Exception as e:
+            print(f"Error starting playback: {e}")
             return False
 
     def pause(self):
         """Pause playback."""
         if self.is_playing and not self.is_paused:
-            pygame.mixer.music.pause()
+            self._pause_event.clear()
             self.is_paused = True
+            print("Paused playback")
 
     def stop(self):
         """Stop playback and reset position."""
-        pygame.mixer.music.stop()
+        self._stop_playback = True
+        self._pause_event.set()  # Unblock if paused
+
+        if self._playback_thread and self._playback_thread.is_alive():
+            self._playback_thread.join(timeout=1.0)
+
         self.is_playing = False
         self.is_paused = False
         self.position = 0.0
-        self._stop_position_tracking()
+        print("Stopped playback")
+
+    def seek(self, position: float):
+        """
+        Seek to a specific position in the audio.
+
+        Args:
+            position: Position in seconds
+        """
+        if self.audio_segment:
+            self.position = max(0.0, min(position, self.duration))
+            print(f"Seeked to position: {self.position:.2f}s")
 
     def set_volume(self, volume: float):
         """
@@ -92,8 +153,8 @@ class AudioPlayer:
         Args:
             volume: Volume level (0.0 to 1.0)
         """
-        volume = max(0.0, min(1.0, volume))
-        pygame.mixer.music.set_volume(volume)
+        self.volume = max(0.0, min(1.0, volume))
+        print(f"Volume set to: {self.volume:.2f}")
 
     def get_position(self) -> float:
         """Get current playback position in seconds."""
@@ -105,49 +166,111 @@ class AudioPlayer:
 
     def is_file_playing(self) -> bool:
         """Check if audio is currently playing."""
-        return self.is_playing and pygame.mixer.music.get_busy()
+        return self.is_playing and not self.is_paused
 
-    def _start_position_tracking(self):
-        """Start tracking playback position."""
-        self._stop_thread = False
-        if self._position_thread is None or not self._position_thread.is_alive():
-            self._position_thread = threading.Thread(target=self._track_position)
-            self._position_thread.daemon = True
-            self._position_thread.start()
+    def _playback_worker(self):
+        """Worker method for audio playback in a separate thread."""
+        if not self.audio_segment or not PYAUDIO_AVAILABLE:
+            self.is_playing = False
+            return
 
-    def _stop_position_tracking(self):
-        """Stop tracking playback position."""
-        self._stop_thread = True
-        if self._position_thread and self._position_thread.is_alive():
-            self._position_thread.join(timeout=1.0)
+        try:
+            # Apply volume
+            audio_data = self.audio_segment
+            if self.volume != 1.0:
+                # Convert volume from 0-1 to dB (roughly -60dB to 0dB)
+                db_change = (self.volume - 1.0) * 60
+                audio_data = audio_data + db_change
 
-    def _track_position(self):
-        """Track playback position in a separate thread."""
-        start_time = time.time()
-        start_position = self.position
+            # Start from current position
+            start_ms = int(self.position * 1000)
+            audio_data = audio_data[start_ms:]
 
-        while not self._stop_thread and self.is_playing:
-            if pygame.mixer.music.get_busy() and not self.is_paused:
-                elapsed = time.time() - start_time
-                self.position = start_position + elapsed
+            # Setup pyaudio stream
+            chunk_size = 1024
+            format_map = {
+                1: pyaudio.paInt8,
+                2: pyaudio.paInt16,
+                4: pyaudio.paInt32,
+            }
 
-                # Check if playback finished
-                if self.position >= self.duration:
-                    self.position = self.duration
-                    self.is_playing = False
+            format = format_map.get(audio_data.sample_width, pyaudio.paInt16)
+
+            self.stream = self.pyaudio_instance.open(
+                format=format,
+                channels=audio_data.channels,
+                rate=audio_data.frame_rate,
+                output=True,
+                frames_per_buffer=chunk_size,
+            )
+
+            # Convert to raw audio data
+            raw_data = audio_data.raw_data
+
+            # Playback loop
+            bytes_per_second = (
+                audio_data.frame_rate * audio_data.channels * audio_data.sample_width
+            )
+            start_time = time.time()
+            bytes_played = 0
+
+            for i in range(0, len(raw_data), chunk_size):
+                if self._stop_playback:
                     break
-            else:
-                # Update start time when paused/resumed
-                start_time = time.time()
-                start_position = self.position
 
-            time.sleep(0.1)  # Update every 100ms
+                # Wait if paused
+                self._pause_event.wait()
+
+                if self._stop_playback:
+                    break
+
+                # Play chunk
+                chunk = raw_data[i : i + chunk_size]
+                self.stream.write(chunk)
+                bytes_played += len(chunk)
+
+                # Update position
+                if not self.is_paused:
+                    self.position = start_ms / 1000.0 + (
+                        bytes_played / bytes_per_second
+                    )
+
+                # Check if we've reached the end
+                if self.position >= self.duration:
+                    break
+
+            # Cleanup
+            if self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
+                self.stream = None
+
+            # If we finished normally, stop
+            if not self._stop_playback:
+                self.position = self.duration
+                self.is_playing = False
+                print("Playback finished")
+
+        except Exception as e:
+            print(f"Error during playback: {e}")
+        finally:
+            self.is_playing = False
+            if self.stream:
+                try:
+                    self.stream.stop_stream()
+                    self.stream.close()
+                except:
+                    pass
+                self.stream = None
 
     def cleanup(self):
         """Clean up resources."""
         self.stop()
-        pygame.mixer.quit()
+        if self.pyaudio_instance:
+            self.pyaudio_instance.terminate()
+            self.pyaudio_instance = None
+        print("Audio player cleaned up")
 
 
 # Global audio player instance
-audio_player = AudioPlayer()
+audio_player = PythonAudioPlayer()

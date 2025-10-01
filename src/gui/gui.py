@@ -1,5 +1,4 @@
 import os
-import sys
 import threading
 from pathlib import Path
 from typing import Optional
@@ -7,11 +6,14 @@ from typing import Optional
 import flet as ft
 
 from stego import embed, extract, compare_mp3_files
-from audio import audio_player
+from audio.player import audio_player
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-class AudioSteganographyGUI:
+class GUI:
+    """
+    GUI implementation for LSB-embedding program in MP3 files
+    """
+
     def __init__(self, page: ft.Page):
         self.page = page
         self.page.title = "Audio Steganography - Multiple LSB"
@@ -36,8 +38,20 @@ class AudioSteganographyGUI:
         # Initialize UI
         self.setup_ui()
 
+    def show_notification(self, message: str, color: str = "green"):
+        """Show a notification message to the user."""
+        snack_bar = ft.SnackBar(
+            content=ft.Text(message, color="white"),
+            bgcolor=color,
+            duration=3000,  # 3 seconds
+        )
+        self.page.overlay.append(snack_bar)
+        self.page.update()
+        snack_bar.open = True
+        self.page.update()
+
     def setup_ui(self):
-        """Setup the user interface."""
+        """Setup UI"""
 
         # Main tabs
         tabs = ft.Tabs(
@@ -77,14 +91,13 @@ class AudioSteganographyGUI:
         )
 
     def create_embed_tab(self):
-        """Create the embed tab content."""
+        """Tab embed"""
 
         # File selection controls
         self.cover_audio_text = ft.Text("No file selected", size=12)
         self.secret_file_text = ft.Text("No file selected", size=12)
         self.output_audio_text = ft.Text("No file selected", size=12)
 
-        # Settings controls
         self.lsb_count_dropdown = ft.Dropdown(
             label="LSB Count",
             value="2",
@@ -211,13 +224,13 @@ class AudioSteganographyGUI:
         )
 
     def create_extract_tab(self):
-        """Create the extract tab content."""
+        """Tab extract"""
 
-        # File selection controls
+        # File selection
         self.stego_audio_text = ft.Text("No file selected", size=12)
         self.extract_output_text = ft.Text("No folder selected", size=12)
 
-        # Settings controls
+        # Settings
         self.extract_encrypt_checkbox = ft.Checkbox(
             label="Payload is Encrypted",
             value=False,
@@ -319,7 +332,7 @@ class AudioSteganographyGUI:
         )
 
     def create_compare_tab(self):
-        """Create the compare tab content."""
+        """Tab compare"""
 
         # File selection controls
         self.compare_original_text = ft.Text("No file selected", size=12)
@@ -401,9 +414,9 @@ class AudioSteganographyGUI:
         self.player_file_text = ft.Text("No audio file loaded", size=12)
 
         self.play_button = ft.ElevatedButton("Play", on_click=self.toggle_play)
-
         self.stop_button = ft.ElevatedButton("Stop", on_click=self.stop_audio)
 
+        # Volume slider
         self.volume_slider = ft.Slider(
             min=0,
             max=100,
@@ -411,6 +424,17 @@ class AudioSteganographyGUI:
             divisions=100,
             label="Volume: {value}%",
             on_change=self.on_volume_change,
+        )
+
+        # Seek bar
+        self.seek_slider = ft.Slider(
+            min=0,
+            max=100,
+            value=0,
+            divisions=1000,
+            label="Position",
+            on_change=self.on_seek_change,
+            disabled=True,
         )
 
         self.position_text = ft.Text("00:00 / 00:00", size=14)
@@ -462,6 +486,12 @@ class AudioSteganographyGUI:
                                     [
                                         ft.Text("Volume:", size=14),
                                         ft.Container(self.volume_slider, expand=True),
+                                    ]
+                                ),
+                                ft.Row(
+                                    [
+                                        ft.Text("Position:", size=14),
+                                        ft.Container(self.seek_slider, expand=True),
                                     ]
                                 ),
                                 ft.Container(
@@ -597,12 +627,20 @@ class AudioSteganographyGUI:
         def on_result(result: ft.FilePickerResultEvent):
             if result.files:
                 file_path = result.files[0].path
-                if audio_player.load_file(file_path):
-                    self.player_file_text.value = os.path.basename(file_path)
-                    self.start_position_tracking()
-                else:
-                    self.show_error("Failed to load audio file")
+                self.player_file_text.value = f"Loaded: {Path(file_path).name}"
+                self.player_file_text.color = "green"
                 self.page.update()
+
+                if audio_player.load_file(file_path):
+                    self.seek_slider.disabled = False
+                    self.seek_slider.max = audio_player.get_duration()
+                    self.page.update()
+                else:
+                    self.player_file_text.value = (
+                        f"Error loading: {Path(file_path).name}"
+                    )
+                    self.player_file_text.color = "red"
+                    self.page.update()
 
         file_picker = ft.FilePicker(on_result=on_result)
         self.page.overlay.append(file_picker)
@@ -646,6 +684,7 @@ class AudioSteganographyGUI:
         else:
             if audio_player.play():
                 self.play_button.text = "Pause"
+                self.start_position_tracking()
             else:
                 self.show_error("Failed to play audio")
         self.page.update()
@@ -653,11 +692,17 @@ class AudioSteganographyGUI:
     def stop_audio(self, e):
         audio_player.stop()
         self.play_button.text = "Play"
+        self.seek_slider.value = 0
         self.page.update()
 
     def on_volume_change(self, e):
         volume = self.volume_slider.value / 100.0
         audio_player.set_volume(volume)
+
+    def on_seek_change(self, e):
+        if audio_player.get_duration() > 0:
+            position = (self.seek_slider.value / 100.0) * audio_player.get_duration()
+            audio_player.seek(position)
 
     def start_position_tracking(self):
         self.stop_position_thread = False
@@ -676,11 +721,14 @@ class AudioSteganographyGUI:
 
             self.position_text.value = f"{pos_str} / {dur_str}"
 
+            # Update seek slider
+            if duration > 0:
+                self.seek_slider.value = (position / duration) * 100
+
             if not audio_player.is_file_playing() and position > 0:
                 self.play_button.text = "Play"
 
             self.page.update()
-
             import time
 
             time.sleep(0.5)
@@ -701,7 +749,7 @@ class AudioSteganographyGUI:
                 self.set_status("Embedding...", True)
 
                 # Get parameters
-                lsb_count = int(self.lsb_count_dropdown.value)
+                lsb_count = int(self.lsb_count_dropdown.value or "2")
                 encrypt = self.encrypt_checkbox.value
                 random_pos = self.random_position_checkbox.value
                 key = self.key_textfield.value if (encrypt or random_pos) else None
@@ -718,9 +766,12 @@ class AudioSteganographyGUI:
                 )
 
                 self.set_status("Embedding completed successfully!", False, "green")
+                self.show_notification("✅ Secret file embedded successfully!", "green")
 
             except Exception as ex:
-                self.set_status(f"Embedding failed: {str(ex)}", False, "red")
+                error_msg = f"Embedding failed: {str(ex)}"
+                self.set_status(error_msg, False, "red")
+                self.show_notification(f"❌ {error_msg}", "red")
 
         threading.Thread(target=embed_worker, daemon=True).start()
 
@@ -758,9 +809,15 @@ class AudioSteganographyGUI:
                     False,
                     "green",
                 )
+                self.show_notification(
+                    f"✅ Secret file extracted successfully! Saved: {os.path.basename(extracted_file)}",
+                    "green",
+                )
 
             except Exception as ex:
-                self.set_status(f"Extraction failed: {str(ex)}", False, "red")
+                error_msg = f"Extraction failed: {str(ex)}"
+                self.set_status(error_msg, False, "red")
+                self.show_notification(f"❌ {error_msg}", "red")
 
         threading.Thread(target=extract_worker, daemon=True).start()
 
@@ -784,10 +841,26 @@ class AudioSteganographyGUI:
 
                 self.set_status("Comparison completed successfully!", False, "green")
 
+                # Show notification with quality assessment
+                if psnr_value > 60:
+                    quality = "Excellent quality preservation!"
+                elif psnr_value > 40:
+                    quality = "Good quality preservation!"
+                elif psnr_value > 20:
+                    quality = "Moderate quality preservation"
+                else:
+                    quality = "Low quality preservation"
+
+                self.show_notification(
+                    f"✅ PSNR: {psnr_value:.2f} dB - {quality}", "blue"
+                )
+
             except Exception as ex:
-                self.set_status(f"Comparison failed: {str(ex)}", False, "red")
+                error_msg = f"Comparison failed: {str(ex)}"
+                self.set_status(error_msg, False, "red")
                 self.psnr_result_text.value = "Comparison failed"
                 self.psnr_result_text.color = "red"
+                self.show_notification(f"❌ {error_msg}", "red")
 
         threading.Thread(target=compare_worker, daemon=True).start()
 
@@ -851,12 +924,13 @@ class AudioSteganographyGUI:
 
 
 def run_gui(page: ft.Page):
-    app = AudioSteganographyGUI(page)
+    app = GUI(page)
 
     # Handle window close
     def on_window_event(e):
         if e.data == "close":
             app.cleanup()
+            page.window.destroy()
 
-    page.window.prevent_close = True
-
+    page.window.on_event = on_window_event
+    page.window.prevent_close = False
