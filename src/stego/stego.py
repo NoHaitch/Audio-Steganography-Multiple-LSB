@@ -615,7 +615,7 @@ def extract(
         while os.path.exists(output_file):
             output_file = os.path.join(output_path, f"{base}_{counter}{ext}")
             counter += 1
-        print(f"⚠ File exists, saving as: {os.path.basename(output_file)}")
+        print(f"File exists, saving as: {os.path.basename(output_file)}")
 
     with open(output_file, "wb") as out:
         out.write(payload)

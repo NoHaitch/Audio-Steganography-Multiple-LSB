@@ -170,9 +170,6 @@ def main() -> None:
             print(f"Error starting GUI: {e}")
             sys.exit(1)
 
-
-
-
     else:
         parser.print_help()
         sys.exit(1)
