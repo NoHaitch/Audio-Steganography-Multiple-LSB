@@ -13,6 +13,10 @@ def calculate_psnr(original_samples: np.ndarray, modified_samples: np.ndarray) -
     try:
         original = original_samples.astype(np.float64)
         modified = modified_samples.astype(np.float64)
+
+        max_abs = max(abs(original).max(), abs(modified).max())
+        original /= max_abs
+        modified /= max_abs
         
         mse = np.mean(np.square(original - modified))
         
