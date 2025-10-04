@@ -1,120 +1,95 @@
-# Audio-Steganography-Multiple-LSB
+<!-- Back to Top Link-->
 
-A Python implementation of audio steganography using multiple Least Significant Bits (LSB) technique. This program allows you to hide secret messages or files within MP3 audio files while maintaining audio quality.
+<a name="readme-top"></a>
 
-## Features
+<br />
+<div align="center">
+  <h1 align="center">Audio Steganography Multiple LSB</h1>
 
-- **Multiple LSB Embedding**: Support for 1-4 LSBs for variable capacity
-- **Encryption Support**: Vigenère cipher encryption for enhanced security
-- **Randomized Positioning**: Randomize starting position for embedding
-- **Quality Measurement**: PSNR (Peak Signal-to-Noise Ratio) calculation for audio quality assessment
-- **GUI Interface**: User-friendly graphical interface using Flet
-- **File Format Support**: Works with various file types for secret messages
+  <p align="center">
+    <h4>Embedding Secret Messages to MP3 Audio File using M-LSB Method.</h4>
+  </p>
+</div>
 
-## Project Structure
+<div align="center" id="contributor">
+  <strong>
+    <h3>Made By:</h3>
+    <table align="center">
+      <tr>
+        <td>NIM</td>
+        <td>Name</td>
+      </tr>
+      <tr>
+        <td>13522071</td>
+        <td>Bagas Sambega Rosyada
 
-```text
-src/
-├── main.py              # Main entry point with CLI interface
-├── audio/               # Audio file operations and playback
-├── cipher/              # Encryption algorithms (Vigenère cipher)
-├── fileio/              # File input/output operations
-├── gui/                 # Graphical user interface
-├── randomizer/          # Position randomization utilities
-├── stego/               # Core steganography algorithms and PSNR calculation
-└── utils/               # Shared types and exception handling
-```
+</td>
+      </tr>
+      <tr>
+        <td>13522091</td>
+        <td>Raden Francisco Trianto B.</td>
+      </tr>
+    </table>
+  </strong>
+  <br>
+</div>
 
-## Requirements
+## About The Project
 
-### Core Dependencies
+Embedding Secret Messages to MP3 Audio File using M-LSB Method.
 
-- `librosa` - Audio analysis and processing
-- `soundfile` - Audio file I/O
-- `numpy` - Numerical computations
-- `flet` - GUI framework
-- `pydub` - Audio manipulation
+For Course IF4020 Cryptography, we made a program to do Steganography in MP3 using Multiple LSB(Least Significant Byte) Method. Embedding using MP3 has many challenge, mainly due to how MP3 itself works. MP3 is a low quality, lossy compression, this mean that the the proses of converting audio to MP3 will loss data and its ireversable. We handle the problem by purely treating the MP3 as a bitstream and modify the LSB with percision. This method however, is limited to only change the Audio Data inside the Frames of MP3. The ID3 tag is optional so we can't depend on it, while the Frame Header cannot be change or the file will be corrupted. We also implemented additional Vigenere Cipher for security and Seed for choosing the starting embed location.
 
-## Installation
+The program iself can be run in 2 modes: pure CLI or using the GUI.
 
-1. **Clone the repository:**
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-   ```bash
-   git clone <repository-url>
+## Getting Started
+
+### Prerequisites
+
+Project dependencies:
+
+- Python 3.13
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Installation
+
+1. Clone the repo
+   ```sh
+   git clone https://github.com/NoHaitch/Audio-Steganography-Multiple-LSB
+   ```
+2. Open Cloned Directory
+   ```
    cd Audio-Steganography-Multiple-LSB
    ```
-
-2. **Install dependencies:**
-
-   ```bash
-   pip install -r requirements.txt
+3. Install Python Dependencies
+   ```sh
+   pip install -r requirement.txt
+   ```
+4. Run The GUI
+   ```sh
+   python src/main.py gui
    ```
 
-## Usage
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-The program can be used in two modes: GUI and command-line interface
+## Instruction
 
-### GUI Mode
+To run the application call the main.py with the main arguments:
 
-Launch the graphical interface:
-
-```bash
-python src/main.py gui
+```
+python src/main.py [MAIN_ARGS] [Other Flags and Args]
 ```
 
-### Command Line Interface
+Here are the list of Main Arguments, please use the flag `-h` to find out how to use them:
 
-#### 1. Embed a Secret Message
+- `gui` Run the GUI
+- `embed` Embedding
+- `extract` Extraction
+- `compare` Comparing Audio Files
 
-```bash
-python src/main.py embed \
-  --cover path/to/cover.mp3 \
-  --secret path/to/secret.txt \
-  --output path/to/output.mp3 \
-  --lsb-count 2 \
-  [--random] \
-  [--cipher] \
-  [--key "your-key"]
-```
+example: `python src/main.py embed -h`
 
-**Parameters:**
-
-- `--cover`: Path to the cover MP3 file
-- `--secret`: Path to the secret message/file
-- `--output`: Path for the output steganographic MP3
-- `--lsb-count`: Number of LSBs to use (1-4, higher = more capacity, lower quality)
-- `--random`: Use randomized starting position (requires `--key`)
-- `--cipher`: Encrypt the secret using Vigenère cipher (requires `--key`)
-- `--key`: Key for randomization and/or encryption
-
-#### 2. Extract a Hidden Message
-
-```bash
-python src/main.py extract \
-  --input path/to/stego.mp3 \
-  --output path/to/extracted/ \
-  [--random] \
-  [--cipher] \
-  [--key "your-key"]
-```
-
-**Parameters:**
-
-- `--input`: Path to the steganographic MP3 file
-- `--output`: Path/folder to save the extracted message
-- `--random`: Use randomized position (must match embedding settings)
-- `--cipher`: Decrypt using Vigenère cipher (must match embedding settings)
-- `--key`: Key for randomization and/or decryption (must match embedding key)
-
-#### 3. Compare Audio Quality (PSNR)
-
-```bash
-python src/main.py compare \
-  --original path/to/original.mp3 \
-  --modified path/to/stego.mp3
-```
-
-**Parameters:**
-
-- `--original`: Path to the original MP3 file
-- `--modified`: Path to the modified/steganographic MP3 file
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
