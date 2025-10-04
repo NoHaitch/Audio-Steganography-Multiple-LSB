@@ -5,7 +5,7 @@ from fileio import reader, writter
 from cipher import vigenere_decrypt, vigenere_encrypt
 
 
-# Marker to let program know which n-bits used in LSB, so the extractor know
+# Signature to tell extractor which n-bit used
 SIGNATURES: Dict[int, Tuple[str, str]] = {
     1: ("10101010101010", "10101010101010"),  # 1bit
     2: ("01010101010101", "01010101010101"),  # 2bit
@@ -13,7 +13,7 @@ SIGNATURES: Dict[int, Tuple[str, str]] = {
     4: ("01010101010101", "10101010101010"),  # 4bit
 }
 
-# Show how many data used each second
+# How many data used each second
 BITRATE_TABLE = {
     "1": {  # MPEG-1
         1: [
@@ -186,7 +186,7 @@ def find_mp3_frames(
     frames = []
     limit = n if max_scan is None else min(n, start_offset + max_scan)
 
-    # Check if see a valid header
+    # Check if found a valid header
     while pos + 4 <= limit:
         # fast sync check: two bytes 0xFF (first 11-bits)
         valid, info = _parse_frame_header(data[pos : pos + 4])
@@ -336,7 +336,6 @@ def embed(
         payload = vigenere_encrypt(data=payload, key=key)
         print(f"Encrypted payload length: {len(payload)} bytes")
 
-
     # header: [payload_length: 4 bytes][filename_length: 1 byte][filename: N bytes]
     # payload is after encryption
     header = (
@@ -405,13 +404,14 @@ def embed(
 
         carrier[carrier_index] = (carrier[carrier_index] & mask) | bits_val
         position_index += 1
-        
+
         if embedding_complete:
             break
 
-    # Write
     writter.write_mp3_bytes(output_path, carrier)
-    print(f"Successfully embedded '{os.path.basename(file_to_hide_path)}' ({len(payload)} bytes)")
+    print(
+        f"Successfully embedded '{os.path.basename(file_to_hide_path)}' ({len(payload)} bytes)"
+    )
 
 
 def detect_bits_per_sample(
@@ -510,7 +510,7 @@ def extract(
     )
     print(f"{bits_per_sample} bits LSB")
 
-    # Calculate starting offset
+    # Starting offset
     start_offset = 0
     if random_position and key is not None:
         start_offset = generate_random_position(key, len(usable_positions))
@@ -532,8 +532,7 @@ def extract(
                 yield (lsb_bits >> bit_pos) & 1
 
             position_index += 1
-            # Prevent infinite loop - though this should be controlled by caller
-            if position_index >= total_positions * 2:  # Allow up to 2 full cycles
+            if position_index >= total_positions * 2:  # So it won't infinite loop
                 break
 
     bit_gen = bit_stream_generator()
@@ -558,7 +557,7 @@ def extract(
 
     print("Reading metadata")
 
-    # Read payload length (4 bytes, little-endian). Still encrypted
+    # Payload length (4 bytes, little-endian). Still encrypted
     payload_len = 0
     for i in range(4):
         b = read_bits(8)
