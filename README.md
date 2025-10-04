@@ -75,21 +75,70 @@ Project dependencies:
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Instruction
+## Usage
 
-To run the application call the main.py with the main arguments:
+The program can be used in two modes: GUI and command-line interface
 
+### GUI Mode
+
+Launch the graphical interface:
+```bash
+python src/main.py gui
 ```
-python src/main.py [MAIN_ARGS] [Other Flags and Args]
+
+### Command Line Interface
+
+#### 1. Embed a Secret Message
+
+```bash
+python src/main.py embed \
+  --cover path/to/cover.mp3 \
+  --secret path/to/secret.txt \
+  --output path/to/output.mp3 \
+  --lsb-count 2 \
+  [--random] \
+  [--cipher] \
+  [--key "your-key"]
 ```
 
-Here are the list of Main Arguments, please use the flag `-h` to find out how to use them:
+**Parameters:**
+- `--cover`: Path to the cover MP3 file
+- `--secret`: Path to the secret message/file
+- `--output`: Path for the output steganographic MP3
+- `--lsb-count`: Number of LSBs to use (1-4, higher = more capacity, lower quality)
+- `--random`: Use randomized starting position (requires `--key`)
+- `--cipher`: Encrypt the secret using Vigenère cipher (requires `--key`)
+- `--key`: Key for randomization and/or encryption
 
-- `gui` Run the GUI
-- `embed` Embedding
-- `extract` Extraction
-- `compare` Comparing Audio Files
+#### 2. Extract a Hidden Message
 
-example: `python src/main.py embed -h`
+```bash
+python src/main.py extract \
+  --input path/to/stego.mp3 \
+  --output path/to/extracted/ \
+  [--random] \
+  [--cipher] \
+  [--key "your-key"]
+```
+
+**Parameters:**
+- `--input`: Path to the steganographic MP3 file
+- `--output`: Path/folder to save the extracted message
+- `--random`: Use randomized position (must match embedding settings)
+- `--cipher`: Decrypt using Vigenère cipher (must match embedding settings)
+- `--key`: Key for randomization and/or decryption (must match embedding key)
+
+#### 3. Compare Audio Quality (PSNR)
+
+```bash
+python src/main.py compare \
+  --original path/to/original.mp3 \
+  --modified path/to/stego.mp3
+```
+
+**Parameters:**
+- `--original`: Path to the original MP3 file
+- `--modified`: Path to the modified/steganographic MP3 file
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
