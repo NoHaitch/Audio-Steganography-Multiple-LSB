@@ -2,20 +2,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Optional
-
-try:
-    import pyaudio
-
-    PYAUDIO_AVAILABLE = True
-except ImportError:
-    PYAUDIO_AVAILABLE = False
-
-try:
-    from pydub import AudioSegment
-
-    PYDUB_AVAILABLE = True
-except ImportError:
-    PYDUB_AVAILABLE = False
+import pyaudio
+from pydub import AudioSegment
 
 
 class AudioPlayer:
@@ -38,8 +26,7 @@ class AudioPlayer:
         self.pyaudio_instance = None
         self.stream = None
 
-        if PYAUDIO_AVAILABLE:
-            self.pyaudio_instance = pyaudio.PyAudio()
+        self.pyaudio_instance = pyaudio.PyAudio()
 
     def load_file(self, file_path: str) -> bool:
         """
@@ -52,11 +39,6 @@ class AudioPlayer:
             bool
         """
         try:
-            if not PYDUB_AVAILABLE:
-                print(
-                    "Error: pydub not available"
-                )
-                return False
 
             path_obj = Path(file_path)
             if not path_obj.exists():
@@ -168,10 +150,6 @@ class AudioPlayer:
 
     def _playback_worker(self):
         """Worker method for audio playback in a separate thread"""
-        if not self.audio_segment or not PYAUDIO_AVAILABLE:
-            self.is_playing = False
-            return
-
         try:
             audio_data = self.audio_segment
             if self.volume != 1.0:

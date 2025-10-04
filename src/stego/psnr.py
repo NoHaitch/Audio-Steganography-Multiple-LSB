@@ -14,22 +14,21 @@ def calculate_psnr(original_samples: np.ndarray, modified_samples: np.ndarray) -
         original = original_samples.astype(np.float64)
         modified = modified_samples.astype(np.float64)
 
-        p0 = np.mean(np.square(original))
-        p1 = np.mean(np.square(modified))
-        power_difference = p1 - p0
-
-        if power_difference == 0:
+        max_abs = max(abs(original).max(), abs(modified).max())
+        original /= max_abs
+        modified /= max_abs
+        
+        mse = np.mean(np.square(original - modified))
+        
+        if mse == 0:
             return float("inf")
-
-        numerator = p1**2
-        denominator = power_difference**2
-        ratio = numerator / denominator
-
-        if ratio <= 0:
-            return 0.0
-
-        return 10 * math.log10(ratio)
-
+        
+        max_value = 1.0
+        
+        psnr = 10 * math.log10(max_value**2 / mse)
+        
+        return psnr
+        
     except Exception as e:
         raise StegoCompareError(f"Failed to calculate PSNR: {e}") from e
 
